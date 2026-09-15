@@ -1,0 +1,10 @@
+node_modules/
+.next/
+out/
+.env*
+!.env.example
+var/
+temp/
+.sites-runtime/
+*.tsbuildinfo
+.DS_Store
