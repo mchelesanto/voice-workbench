@@ -16,6 +16,8 @@ Eine neue Datenbank im eigenen Turso-Konto anlegen und deren Verbindungs-URL üb
 
 Für Google einen API-Schlüssel im eigenen Google-AI-Konto erstellen und GOOGLE_GENERATIVE_AI_API_KEY setzen. Für Mistral einen Schlüssel im eigenen Mistral-Konto erstellen und MISTRAL_API_KEY setzen. Einer der beiden Anbieter reicht für Transkription; die separate Textverbesserung benötigt Mistral. Nicht konfigurierte Anbieter werden als nicht verfügbar ausgewiesen.
 
+Für einen weiteren Rechner dieselbe Turso-Datenbank verwenden und die Zugangsdaten dort in einer eigenen .env.local hinterlegen. Keine zweite Datenbank anlegen, wenn die Notizen gemeinsam verfügbar sein sollen. Audiodateien und noch nicht synchronisierte Entwürfe bleiben auf dem jeweiligen Gerät.
+
 ### Lokaler Start
 
 1. Abhängigkeiten mit `npm ci` installieren.
