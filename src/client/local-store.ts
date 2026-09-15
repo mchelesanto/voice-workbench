@@ -29,6 +29,33 @@ export type Recording = {
   error?: string;
 };
 export type LocalRecord = Draft | Recording;
+export function mergeLocalRecords(
+  stored: LocalRecord[],
+  live: Draft[],
+): LocalRecord[] {
+  const key = (row: LocalRecord) =>
+    row.kind === "draft" ? `draft:${row.draftId}` : `recording:${row.id}`;
+  return [
+    ...new Map(
+      [
+        ...stored.map((row) =>
+          row.kind === "draft" ? { ...row, durable: true } : row,
+        ),
+        ...live,
+      ].map((row) => [key(row), row]),
+    ).values(),
+  ];
+}
+export function needsLocalAttention(row: LocalRecord) {
+  return row.kind === "recording"
+    ? row.state !== "cloud_confirmed"
+    : row.status !== "saved" || !!row.localIssue;
+}
+export function warnBeforeLeaving(draft: Draft) {
+  return (
+    draft.status !== "saved" && (draft.status !== "deleted" || !draft.durable)
+  );
+}
 const draftSchema = z.object({
   kind: z.literal("draft"),
   draftId: idSchema,
@@ -50,6 +77,12 @@ const draftSchema = z.object({
   current: noteSchema.optional(),
   error: z.string().optional(),
   durable: z.boolean(),
+  localIssue: z
+    .object({
+      kind: z.enum(["persist", "cleanup", "discard"]),
+      message: z.string().max(1000),
+    })
+    .optional(),
   restoredFrom: z
     .object({
       draftId: idSchema,

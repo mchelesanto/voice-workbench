@@ -28,6 +28,13 @@
 
 - Runtime messages, code comments, and test descriptions use English. Multilingual input remains supported.
 
+### Fixed
+
+- Keep live unsaved drafts accessible when browser storage and cloud reads fail.
+- Preserve deletion, conflict, and cloud-confirmed states through local persistence failures.
+- Retry local recovery work without repeating confirmed cloud writes, and resume autosave for newly entered text.
+- Track the newest completed local snapshot and reset the view when opening another note.
+
 ### Pending
 
 - Complete-application validation before the first release.

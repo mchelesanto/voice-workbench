@@ -29,6 +29,7 @@ export type Draft = {
   current?: Note;
   error?: string;
   durable: boolean;
+  localIssue?: { kind: "persist" | "cleanup" | "discard"; message: string };
   restoredFrom?: { draftId: string; updatedAt: string; input: CreateNote };
   recoveryAncestors?: {
     draftId: string;
@@ -47,6 +48,7 @@ export type EditorPorts = {
     revision: number | null,
   ) => Promise<Note>;
   changed: () => void;
+  localChanged?: () => void;
 };
 export class EditorSession {
   private state: Draft;
@@ -57,12 +59,25 @@ export class EditorSession {
   private timer?: ReturnType<typeof setTimeout>;
   private alive = true;
   private discarded = false;
+  private localWrite = 0;
+  private localBusy = false;
   private refreshAfter?: Note;
   constructor(
     draft: Draft,
     private ports: EditorPorts,
   ) {
-    this.state = draft;
+    this.state =
+      draft.status === "local_error"
+        ? {
+            ...draft,
+            status: "local",
+            error: undefined,
+            localIssue: {
+              kind: "persist",
+              message: draft.error ?? "The local copy could not be saved.",
+            },
+          }
+        : draft;
   }
   static fromNote(note: Note, ports: EditorPorts) {
     return new EditorSession(
@@ -83,7 +98,7 @@ export class EditorSession {
         baseRevision: note.revision,
         updatedAt: note.updatedAt,
         status: "saved",
-        durable: true,
+        durable: false,
         current: note,
       },
       ports,
@@ -96,11 +111,13 @@ export class EditorSession {
         draftId: crypto.randomUUID(),
         editorInstanceId: crypto.randomUUID(),
         status:
-          draft.status === "deleted"
-            ? "deleted"
-            : draft.status === "conflict"
-              ? "conflict"
-              : "local",
+          draft.status === "saved" && draft.localIssue
+            ? "saved"
+            : draft.status === "deleted"
+              ? "deleted"
+              : draft.status === "conflict"
+                ? "conflict"
+                : "local",
         durable: false,
         restoredFrom: {
           draftId: draft.draftId,
@@ -128,7 +145,11 @@ export class EditorSession {
   }
   private schedule() {
     clearTimeout(this.timer);
-    if (this.alive && this.state.status === "local")
+    if (
+      this.alive &&
+      this.state.status === "local" &&
+      this.state.localIssue?.kind !== "persist"
+    )
       this.timer = setTimeout(() => {
         void this.save();
       }, 700);
@@ -138,7 +159,17 @@ export class EditorSession {
   }
   private persist() {
     if (this.discarded) return Promise.resolve();
-    const value = { ...this.state, input: { ...this.state.input } };
+    const ticket = ++this.localWrite;
+    this.update({ durable: false });
+    const value = {
+      ...this.state,
+      input: { ...this.state.input },
+      durable: true,
+      localIssue:
+        this.state.localIssue?.kind === "persist"
+          ? undefined
+          : this.state.localIssue,
+    };
     const version = this.version;
     const work = this.queue
       .catch(() => {})
@@ -146,15 +177,32 @@ export class EditorSession {
     this.queue = work;
     return work.then(
       () => {
-        if (!this.discarded && version === this.version)
-          this.update({ durable: true });
+        if (
+          !this.discarded &&
+          ticket === this.localWrite &&
+          version === this.version
+        )
+          this.update({
+            durable: true,
+            localIssue:
+              this.state.localIssue?.kind === "persist"
+                ? undefined
+                : this.state.localIssue,
+          });
       },
       (e) => {
-        if (!this.discarded && version === this.version)
+        if (
+          !this.discarded &&
+          ticket === this.localWrite &&
+          version === this.version
+        )
           this.update({
-            status: "local_error",
             durable: false,
-            error: message(e),
+            localIssue: {
+              kind: "persist",
+              message:
+                "The local copy could not be saved. Your text is still available in this session.",
+            },
           });
         throw e;
       },
@@ -177,6 +225,67 @@ export class EditorSession {
   }
   async secure() {
     await this.persist();
+  }
+  private async finishLocal() {
+    try {
+      await this.persist();
+    } catch {
+      return;
+    }
+    if (
+      this.discarded ||
+      this.state.status !== "saved" ||
+      !this.state.restoredFrom ||
+      !this.ports.retire
+    )
+      return;
+    const sources = [
+      this.state.restoredFrom,
+      ...(this.state.recoveryAncestors ?? []),
+    ];
+    try {
+      for (const source of sources) {
+        if (this.discarded || this.state.status !== "saved") return;
+        await this.ports.retire(source);
+      }
+    } catch {
+      if (!this.discarded) {
+        this.update({
+          localIssue: {
+            kind: "cleanup",
+            message: "Older recovery copies could not be removed.",
+          },
+        });
+        await this.persist().catch(() => {});
+      }
+      return;
+    }
+    if (this.discarded) return;
+    this.update({
+      restoredFrom: undefined,
+      recoveryAncestors: undefined,
+      localIssue:
+        this.state.localIssue?.kind === "cleanup"
+          ? undefined
+          : this.state.localIssue,
+    });
+    await this.persist().catch(() => {});
+  }
+  async retryLocal() {
+    if (this.discarded || this.busy || this.localBusy) return;
+    const version = this.version;
+    this.localBusy = true;
+    try {
+      await this.finishLocal();
+    } finally {
+      this.localBusy = false;
+      if (this.version !== version) this.schedule();
+      try {
+        this.ports.localChanged?.();
+      } catch {
+        /* View refresh does not change local persistence. */
+      }
+    }
   }
   async proposeRefinement(generate: (source: string) => Promise<string>) {
     const source = this.state.input.body;
@@ -219,8 +328,10 @@ export class EditorSession {
       this.discarded = false;
       this.alive = true;
       this.update({
-        status: "error",
-        error: "Local deletion failed. Your draft is still available.",
+        localIssue: {
+          kind: "discard",
+          message: "Local deletion failed. Your draft is still available.",
+        },
       });
       throw error;
     }
@@ -229,6 +340,7 @@ export class EditorSession {
     clearTimeout(this.timer);
     if (
       this.discarded ||
+      this.localBusy ||
       this.busy ||
       ["saved", "conflict", "deleted", "deleting"].includes(this.state.status)
     )
@@ -238,7 +350,11 @@ export class EditorSession {
       sent = { ...this.state.input },
       revision = this.state.baseRevision;
     try {
-      await this.persist();
+      try {
+        await this.persist();
+      } catch {
+        return;
+      }
       if (this.cannotSave()) return;
       this.update({ status: "saving", error: undefined });
       let note: Note;
@@ -281,15 +397,15 @@ export class EditorSession {
         current: note,
         status: version === this.version ? "saved" : "local",
       });
-      // Keep a confirmed version as a small local recovery copy.
-      await this.persist();
-      if (this.state.status === "saved" && this.state.restoredFrom)
-        for (const source of [
-          this.state.restoredFrom,
-          ...(this.state.recoveryAncestors ?? []),
-        ])
-          await this.ports.retire?.(source);
-      this.ports.changed();
+      // Local bookkeeping cannot reverse an already confirmed cloud write.
+      await this.finishLocal();
+      if (!this.discarded) {
+        try {
+          this.ports.changed();
+        } catch {
+          /* View refresh cannot undo a cloud confirmation. */
+        }
+      }
     } catch (error) {
       if (this.cannotSave()) return;
       if (
@@ -309,8 +425,7 @@ export class EditorSession {
         )
       )
         this.update({ status: "deleted", error: error.message });
-      else if (this.state.status !== "local_error")
-        this.update({ status: "error", error: message(error) });
+      else this.update({ status: "error", error: message(error) });
       await this.persist().catch(() => {});
     } finally {
       this.busy = false;
@@ -335,6 +450,8 @@ export class EditorSession {
         input: { ...this.state.input, title: note.title, body: note.body },
         baseRevision: note.revision,
         current: note,
+        durable: false,
+        error: undefined,
       });
     } else if (
       note.title === this.state.input.title &&
@@ -344,6 +461,8 @@ export class EditorSession {
         baseRevision: note.revision,
         current: note,
         status: "saved",
+        durable: false,
+        error: undefined,
       });
     else
       this.update({
@@ -400,6 +519,7 @@ export class EditorSession {
         error: error.message,
       });
     else this.update({ status: "error", error: message(error) });
+    void this.persist().catch(() => {});
   }
   dispose() {
     this.alive = false;

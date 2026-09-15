@@ -56,7 +56,8 @@ describe("Editor reliability", () => {
     session.edit({ body: "Wertvoll" });
     await session.save();
     expect(ports.write).not.toHaveBeenCalled();
-    expect(session.snapshot().status).toBe("local_error");
+    expect(session.snapshot().status).toBe("local");
+    expect(session.snapshot().localIssue?.kind).toBe("persist");
     expect(session.snapshot().input.body).toBe("Wertvoll");
     session.dispose();
   });
@@ -108,6 +109,206 @@ describe("Editor reliability", () => {
     session.dispose();
     other.dispose();
   });
+});
+
+it.each(["deleted", "deleting", "conflict"] as const)(
+  "preserves %s when local persistence fails",
+  async (status) => {
+    const { session: initial, ports } = setup();
+    ports.persist = vi.fn(async () => {
+      throw new Error("quota");
+    });
+    const session = new EditorSession(
+      {
+        ...initial.snapshot(),
+        status,
+        current: { ...note, body: "Remote", revision: 2 },
+      },
+      ports,
+    );
+    await expect(session.secure()).rejects.toThrow();
+    expect(session.snapshot()).toMatchObject({
+      status,
+      durable: false,
+      localIssue: { kind: "persist" },
+    });
+    await session.save();
+    expect(ports.write).not.toHaveBeenCalled();
+    session.edit({ body: "Edited" });
+    expect(session.snapshot().status).toBe(status);
+    if (status !== "conflict")
+      expect(session.snapshot().input.body).toBe("Original");
+    session.dispose();
+    initial.dispose();
+  },
+);
+
+it("preserves cloud confirmation when the local confirmation write fails", async () => {
+  const { session: initial, ports } = setup();
+  const session = EditorSession.restore(
+    { ...initial.snapshot(), status: "error" },
+    ports,
+  );
+  let count = 0;
+  ports.persist = vi.fn(async () => {
+    if (++count > 1) throw new Error("quota");
+  });
+  await session.save();
+  expect(session.snapshot()).toMatchObject({
+    status: "saved",
+    baseRevision: 2,
+    durable: false,
+    localIssue: { kind: "persist" },
+  });
+  expect(ports.changed).toHaveBeenCalledTimes(1);
+  ports.persist = vi.fn(async () => {});
+  await session.retryLocal();
+  expect(session.snapshot()).toMatchObject({ status: "saved", durable: true });
+  expect(session.snapshot().localIssue).toBeUndefined();
+  expect(ports.write).toHaveBeenCalledTimes(1);
+  session.dispose();
+  initial.dispose();
+});
+
+it("retries recovery cleanup locally without another cloud write", async () => {
+  const { session: initial, ports } = setup();
+  const session = EditorSession.restore(
+    { ...initial.snapshot(), status: "error" },
+    ports,
+  );
+  ports.retire = vi
+    .fn()
+    .mockRejectedValueOnce(new Error("cleanup"))
+    .mockResolvedValue(undefined);
+  await session.save();
+  expect(session.snapshot()).toMatchObject({
+    status: "saved",
+    baseRevision: 2,
+    localIssue: { kind: "cleanup" },
+  });
+  await session.retryLocal();
+  expect(ports.retire).toHaveBeenCalledTimes(2);
+  expect(ports.write).toHaveBeenCalledTimes(1);
+  expect(session.snapshot().localIssue).toBeUndefined();
+  session.dispose();
+  initial.dispose();
+});
+
+it("does not claim an older local write secured a newer revalidated version", async () => {
+  const { session, ports } = setup();
+  const pending: Array<() => void> = [];
+  ports.persist = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        pending.push(resolve);
+      }),
+  );
+  const old = session.secure();
+  await vi.waitFor(() => expect(pending).toHaveLength(1));
+  session.revalidate({ ...note, body: "New remote version", revision: 2 });
+  pending[0]();
+  await old;
+  expect(session.snapshot().durable).toBe(false);
+  await vi.waitFor(() => expect(pending).toHaveLength(2));
+  pending[1]();
+  await vi.waitFor(() => expect(session.snapshot().durable).toBe(true));
+  session.dispose();
+});
+
+it("keeps newer edits and a cloud failure separate from local retry", async () => {
+  const { session, ports } = setup();
+  ports.write = vi.fn(async () => {
+    throw new ClientError("Cloud unavailable");
+  });
+  session.edit({ body: "Pending cloud version" });
+  await session.save();
+  await session.retryLocal();
+  expect(session.snapshot()).toMatchObject({
+    status: "error",
+    input: { body: "Pending cloud version" },
+    error: "Cloud unavailable",
+  });
+  expect(ports.write).toHaveBeenCalledTimes(1);
+  session.dispose();
+});
+
+it("normalizes a legacy local_error draft without discarding its text", () => {
+  const { session: initial, ports } = setup();
+  const session = new EditorSession(
+    {
+      ...initial.snapshot(),
+      status: "local_error",
+      error: "Old local failure",
+      durable: false,
+    },
+    ports,
+  );
+  expect(session.snapshot()).toMatchObject({
+    status: "local",
+    localIssue: { kind: "persist" },
+    input: { body: "Original" },
+  });
+  expect(session.snapshot().error).toBeUndefined();
+  session.dispose();
+  initial.dispose();
+});
+
+it("does not turn a failed view refresh into a failed cloud save", async () => {
+  const { session, ports } = setup();
+  ports.changed = vi.fn(() => {
+    throw new Error("View refresh failed");
+  });
+  session.edit({ body: "Cloud confirmed" });
+  await session.save();
+  expect(session.snapshot()).toMatchObject({
+    status: "saved",
+    input: { body: "Cloud confirmed" },
+  });
+  expect(ports.write).toHaveBeenCalledTimes(1);
+  session.dispose();
+});
+
+it("resumes autosave for edits made during a slow local-only cleanup", async () => {
+  vi.useFakeTimers();
+  const { session: initial, ports } = setup();
+  const session = new EditorSession(
+    {
+      ...initial.snapshot(),
+      restoredFrom: {
+        draftId: initial.snapshot().draftId,
+        updatedAt: note.updatedAt,
+        input: initial.snapshot().input,
+      },
+      localIssue: { kind: "cleanup", message: "Cleanup pending" },
+    },
+    ports,
+  );
+  let release!: () => void;
+  ports.retire = vi.fn(
+    () =>
+      new Promise<void>((r) => {
+        release = r;
+      }),
+  );
+  try {
+    const local = session.retryLocal();
+    await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+    session.edit({ body: "New work during cleanup" });
+    await vi.advanceTimersByTimeAsync(800);
+    expect(ports.write).not.toHaveBeenCalled();
+    release();
+    await local;
+    await vi.advanceTimersByTimeAsync(800);
+    expect(ports.write).toHaveBeenCalledTimes(1);
+    expect(session.snapshot()).toMatchObject({
+      status: "saved",
+      input: { body: "New work during cleanup" },
+    });
+  } finally {
+    session.dispose();
+    initial.dispose();
+    vi.useRealTimers();
+  }
 });
 
 it("does not replace local text with a revalidation arriving during a save", async () => {

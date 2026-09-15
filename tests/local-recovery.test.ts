@@ -1,5 +1,10 @@
 import { afterEach, expect, it, vi } from "vitest";
 import type { Draft } from "../src/client/editor";
+import {
+  mergeLocalRecords,
+  needsLocalAttention,
+  warnBeforeLeaving,
+} from "../src/client/local-store";
 
 const source = {
   draftId: "22222222-2222-4222-8222-222222222222",
@@ -95,4 +100,36 @@ it("retires the exact source using one readwrite transaction", async () => {
   await retireRecovered(source);
   expect(rows.has(source.draftId)).toBe(false);
   expect(modes).toEqual(["readwrite"]);
+});
+
+it("shows the live unsaved version while retaining other tab drafts", () => {
+  const other = { ...draft, draftId: "55555555-5555-4555-8555-555555555555" };
+  const live = {
+    ...draft,
+    input: { ...draft.input, body: "Only in memory" },
+    durable: false,
+    localIssue: { kind: "persist" as const, message: "Local failure" },
+  };
+  const merged = mergeLocalRecords([draft, other], [live]);
+  expect(merged).toHaveLength(2);
+  expect(
+    merged.find((row) => row.kind === "draft" && row.draftId === draft.draftId),
+  ).toEqual(live);
+  expect(merged).toContainEqual(other);
+});
+
+it("keeps local warnings visible without pretending confirmed cloud text is at risk", () => {
+  const saved = {
+    ...draft,
+    status: "saved" as const,
+    durable: false,
+    localIssue: { kind: "persist" as const, message: "Local failure" },
+  };
+  expect(needsLocalAttention(saved)).toBe(true);
+  expect(warnBeforeLeaving(saved)).toBe(false);
+  expect(warnBeforeLeaving({ ...saved, status: "deleted" })).toBe(true);
+  expect(
+    warnBeforeLeaving({ ...saved, status: "deleted", durable: true }),
+  ).toBe(false);
+  expect(warnBeforeLeaving({ ...saved, status: "conflict" })).toBe(true);
 });

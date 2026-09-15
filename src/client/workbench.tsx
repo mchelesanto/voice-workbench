@@ -64,6 +64,9 @@ import {
   putLocal,
   removeLocal,
   retireRecovered,
+  mergeLocalRecords,
+  needsLocalAttention,
+  warnBeforeLeaving,
   type LocalRecord,
   type Recording,
 } from "./local-store";
@@ -210,6 +213,24 @@ export function Workbench() {
   const [processing, setProcessing] = useState(false);
   const [opening, setOpening] = useState(false);
   const sessions = useRef(new Map<string, EditorSession>());
+  const subscriptions = useRef(new Map<string, () => void>());
+  const [liveDrafts, setLiveDrafts] = useState<Draft[]>([]);
+  const publishDrafts = useCallback(() => {
+    setLiveDrafts(
+      [...sessions.current.values()].map((session) => session.snapshot()),
+    );
+  }, []);
+  const forgetSession = useCallback(
+    (session: EditorSession) => {
+      const id = session.snapshot().draftId;
+      subscriptions.current.get(id)?.();
+      subscriptions.current.delete(id);
+      sessions.current.delete(id);
+      publishDrafts();
+    },
+    [publishDrafts],
+  );
+  const workspaceScroll = useRef<HTMLDivElement>(null);
   const listTicket = useRef(0),
     openTicket = useRef(0);
   const processingRef = useRef(false);
@@ -225,7 +246,7 @@ export function Workbench() {
       );
     } catch {
       setLocalError(
-        "Local storage is unavailable. Please download completed recordings.",
+        "Local storage is unavailable. Copy or download unsaved text and recordings before leaving.",
       );
     }
   }, []);
@@ -262,6 +283,9 @@ export function Workbench() {
       persist: putLocal,
       remove: removeLocal,
       retire: retireRecovered,
+      localChanged: () => {
+        void refreshLocal();
+      },
       changed: () => {
         void refresh();
         void refreshLocal();
@@ -281,12 +305,25 @@ export function Workbench() {
     }),
     [refresh, refreshLocal],
   );
-  const activate = useCallback((session: EditorSession) => {
-    openTicket.current++;
-    sessions.current.set(session.snapshot().draftId, session);
-    setActive(session);
-    setPanel(null);
-  }, []);
+  const activate = useCallback(
+    (session: EditorSession) => {
+      openTicket.current++;
+      sessions.current.delete(session.snapshot().draftId);
+      sessions.current.set(session.snapshot().draftId, session);
+      if (!subscriptions.current.has(session.snapshot().draftId))
+        subscriptions.current.set(
+          session.snapshot().draftId,
+          session.subscribe(publishDrafts),
+        );
+      publishDrafts();
+      setActive(session);
+      setOpening(false);
+      setError("");
+      setPanel(null);
+      workspaceScroll.current?.scrollTo({ top: 0 });
+    },
+    [publishDrafts],
+  );
   const setup = useCallback(async () => {
     setError("");
     const results = await Promise.allSettled([
@@ -313,7 +350,10 @@ export function Workbench() {
   }, [toast]);
   useEffect(() => {
     const pool = sessions.current;
+    const listeners = subscriptions.current;
     return () => {
+      listeners.forEach((unsubscribe) => unsubscribe());
+      listeners.clear();
       pool.forEach((s) => s.dispose());
       modelAbort.current?.abort();
     };
@@ -464,8 +504,8 @@ export function Workbench() {
       if (
         locked ||
         (recording && !recordingDurable) ||
-        [...sessions.current.values()].some(
-          (s) => !["saved", "deleted"].includes(s.snapshot().status),
+        [...sessions.current.values()].some((s) =>
+          warnBeforeLeaving(s.snapshot()),
         )
       ) {
         event.preventDefault();
@@ -496,33 +536,51 @@ export function Workbench() {
   }, [refreshWorkspace]);
   async function openNote(id: string) {
     if (locked) return;
+    const existing = [...sessions.current.values()]
+      .reverse()
+      .find((s) => s.snapshot().noteId === id);
+    if (existing) activate(existing);
     const ticket = ++openTicket.current;
-    setOpening(true);
+    setOpening(!existing);
     setError("");
     try {
-      const n = await request(`/notes/${id}`, noteSchema);
+      const note = await request(`/notes/${id}`, noteSchema);
       if (ticket !== openTicket.current) return;
-      const existing = [...sessions.current.values()].find(
-        (s) => s.snapshot().noteId === id && s.snapshot().status !== "deleted",
-      );
-      if (existing) {
-        existing.revalidate(n);
-        activate(existing);
-      } else activate(EditorSession.fromNote(n, ports()));
+      if (existing) existing.revalidate(note);
+      else activate(EditorSession.fromNote(note, ports()));
     } catch (e) {
-      if (ticket === openTicket.current) setError(message(e));
+      if (ticket === openTicket.current) {
+        if (
+          existing &&
+          e instanceof ClientError &&
+          [404, 410].includes(e.status ?? 0)
+        )
+          existing.removed();
+        setError(message(e));
+      }
     } finally {
-      if (ticket === openTicket.current || ticket + 1 === openTicket.current)
-        setOpening(false);
+      if (ticket === openTicket.current) setOpening(false);
     }
   }
   async function restore(draft: Draft) {
     if (locked) return;
+    const live = sessions.current.get(draft.draftId);
+    if (live) {
+      activate(live);
+      return;
+    }
+    const ticket = ++openTicket.current;
     try {
       const session = EditorSession.restore(draft, ports());
       await session.secure();
+      if (ticket !== openTicket.current) {
+        session.dispose();
+        void refreshLocal();
+        return;
+      }
       activate(session);
-      if (draft.status !== "conflict" && draft.status !== "deleted")
+      if (session.snapshot().status === "saved") await session.retryLocal();
+      else if (draft.status !== "conflict" && draft.status !== "deleted")
         await session.save();
       setToast("Draft restored as a separate version.");
     } catch (e) {
@@ -543,7 +601,7 @@ export function Workbench() {
         item.kind === "draft" ? sessions.current.get(item.draftId) : undefined;
       if (session) {
         await session.discard();
-        sessions.current.delete(session.snapshot().draftId);
+        forgetSession(session);
         setActive((current) => (current === session ? null : current));
       } else
         await removeLocal(item.kind === "recording" ? item.id : item.draftId);
@@ -561,16 +619,15 @@ export function Workbench() {
       `recording-${item.createdAt.replace(/[:.]/g, "-")}.${type === "audio/mp4" ? "m4a" : type === "audio/ogg" ? "ogg" : "webm"}`,
     );
   }
-  const unsaved = local.filter((x) =>
-    x.kind === "draft" ? x.status !== "saved" : x.state !== "cloud_confirmed",
-  );
+  const records = mergeLocalRecords(local, liveDrafts);
+  const unsaved = records.filter(needsLocalAttention);
   const attentionCount = new Set(
     unsaved.map((x) => (x.kind === "draft" ? x.noteId : x.id)),
   ).size;
   const visibleRecording = active
     ? recording?.id === active.snapshot().noteId
       ? recording
-      : local.find(
+      : records.find(
           (x): x is Recording =>
             x.kind === "recording" && x.id === active.snapshot().noteId,
         )
@@ -644,13 +701,13 @@ export function Workbench() {
     </>
   );
   const recoveryGroups = [
-    ...new Set(local.map((x) => (x.kind === "recording" ? x.id : x.noteId))),
+    ...new Set(records.map((x) => (x.kind === "recording" ? x.id : x.noteId))),
   ]
     .map((id) => {
-      const entries = local.filter(
+      const entries = records.filter(
         (x) =>
           (x.kind === "recording" ? x.id : x.noteId) === id &&
-          (x.kind === "recording" || x.status !== "saved"),
+          (x.kind === "recording" || needsLocalAttention(x)),
       );
       const draft = entries.find((x): x is Draft => x.kind === "draft");
       const audio = entries.find((x): x is Recording => x.kind === "recording");
@@ -855,7 +912,7 @@ export function Workbench() {
             <ShieldCheck size={15} />
           </button>
         </header>
-        <div className="workspace-scroll">
+        <div className="workspace-scroll" ref={workspaceScroll}>
           {(error || recorder.error) && (
             <div className="notice error-notice" role="alert">
               <span>{error || recorder.error}</span>
@@ -910,7 +967,7 @@ export function Workbench() {
               locked={locked}
               notify={setToast}
               onDelete={() => {
-                sessions.current.delete(active.snapshot().draftId);
+                forgetSession(active);
                 if (recording?.id === active.snapshot().noteId)
                   setRecording(null);
                 active.dispose();
@@ -1295,8 +1352,17 @@ export function Workbench() {
             are not synced to your other computers.
           </p>
           {localError && <p className="notice">{localError}</p>}
-          {!local.some(
-            (item) => item.kind === "recording" || item.status !== "saved",
+          {records.some(
+            (item) =>
+              item.kind === "draft" && !item.durable && item.status !== "saved",
+          ) && (
+            <p className="notice">
+              Some changes are only in this tab. Copy or download them before
+              reloading or closing it.
+            </p>
+          )}
+          {!records.some(
+            (item) => item.kind === "recording" || needsLocalAttention(item),
           ) && (
             <div className="panel-empty">
               <FolderOpen size={32} />
@@ -1344,7 +1410,7 @@ export function Workbench() {
                             : ["transcribing", "unknown"].includes(item.state)
                               ? "Processing outcome unknown"
                               : "Audio available"
-                          : `Draft · ${statuses[item.status]}`}
+                          : `Draft · ${item.status === "local" && !item.durable ? "Not saved" : statuses[item.status]}${!item.durable && item.status !== "saved" ? " · In memory only" : item.localIssue ? " · Local warning" : ""}`}
                       </small>
                     </div>
                     <div className="local-actions">
@@ -1363,7 +1429,13 @@ export function Workbench() {
                           }
                         }}
                       >
-                        {item.kind === "draft" ? "Restore" : "Open"}
+                        {item.kind === "draft"
+                          ? liveDrafts.some(
+                              (draft) => draft.draftId === item.draftId,
+                            )
+                            ? "Open draft"
+                            : "Restore"
+                          : "Open"}
                       </button>
                       <button
                         className="icon-button"
@@ -1454,6 +1526,7 @@ function Editor({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [cloudDeleted, setCloudDeleted] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [localRetrying, setLocalRetrying] = useState(false);
   const controller = useRef<AbortController | null>(null);
   useEffect(() => () => controller.current?.abort(), []);
   const words = draft.input.body.trim().split(/\s+/u).filter(Boolean).length;
@@ -1564,7 +1637,9 @@ function Editor({
             <span className="status-dot amber" />
           )}
           {!draft.durable && draft.status === "local"
-            ? "Saving on this device"
+            ? draft.localIssue?.kind === "persist"
+              ? "Not saved yet"
+              : "Saving on this device"
             : statuses[draft.status]}
         </span>
       </div>
@@ -1704,10 +1779,48 @@ function Editor({
           </div>
         </section>
       )}
+      {draft.localIssue && (
+        <div className="notice local-warning" role="alert">
+          <span>
+            {draft.status === "saved" && draft.localIssue.kind === "persist"
+              ? "Saved to cloud. The local recovery copy could not be updated."
+              : draft.localIssue.message}
+          </span>
+          {draft.localIssue.kind !== "discard" && (
+            <button
+              className="text-button"
+              disabled={
+                localRetrying ||
+                locked ||
+                draft.status === "deleting" ||
+                draft.status === "saving"
+              }
+              onClick={async () => {
+                setLocalRetrying(true);
+                try {
+                  if (["local", "error"].includes(session.snapshot().status))
+                    await session.save();
+                  else await session.retryLocal();
+                } finally {
+                  setLocalRetrying(false);
+                }
+              }}
+            >
+              {localRetrying
+                ? "Retrying"
+                : ["local", "error"].includes(draft.status)
+                  ? "Try saving again"
+                  : draft.localIssue.kind === "cleanup"
+                    ? "Retry local cleanup"
+                    : "Retry local copy"}
+            </button>
+          )}
+        </div>
+      )}
       {(draft.error || error) && (
         <div className="notice" role="alert">
           <span>{error || draft.error}</span>
-          {["error", "local_error"].includes(draft.status) && (
+          {draft.status === "error" && !draft.localIssue && (
             <button className="text-button" onClick={() => void session.save()}>
               Try saving again
             </button>
