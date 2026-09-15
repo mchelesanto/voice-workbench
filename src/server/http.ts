@@ -98,7 +98,7 @@ export async function withBoundedBody<T>(
     throw error;
   } finally {
     clearTimeout(timeout);
-    // Beendet auch einen Parser, der bereits vor dem vollständigen Lesen abgebrochen ist.
+    // Also stop a parser that failed before reading the complete body.
     deadline.abort();
     if (!limited.locked) void limited.cancel().catch(() => {});
   }

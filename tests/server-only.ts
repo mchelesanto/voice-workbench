@@ -1,2 +1,2 @@
-// Der Testprozess ist serverseitig. Next erzwingt die echte Importgrenze im Build.
+// Tests run server-side. Next enforces the actual import boundary during builds.
 export {};

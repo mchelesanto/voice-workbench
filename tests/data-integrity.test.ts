@@ -20,8 +20,8 @@ const config = {
   googleKey: "fixture",
   mistralKey: "fixture",
 };
-describe("Daten- und Konfigurationsintegrität", () => {
-  it("liefert 140 ganze Unicode-Zeichen im Verlauf", async () => {
+describe("Data and configuration integrity", () => {
+  it("returns 140 complete Unicode characters in previews", async () => {
     const db = createClient({ url: ":memory:" });
     try {
       await migrate(db, "db/migrations");
@@ -43,7 +43,7 @@ describe("Daten- und Konfigurationsintegrität", () => {
       db.close();
     }
   });
-  it("akzeptiert eine ältere freigegebene Modellkennung bei Read und Create-Replay", async () => {
+  it("accepts historical model identifiers on reads and create replays", async () => {
     const db = createClient({ url: ":memory:" });
     try {
       await migrate(db, "db/migrations");
@@ -74,7 +74,7 @@ describe("Daten- und Konfigurationsintegrität", () => {
       db.close();
     }
   });
-  it("verwendet dieselbe Unicode-Längeneinheit für Output und Speichervertrag", async () => {
+  it("uses the same Unicode length unit for output and storage", async () => {
     const text = "😀".repeat(50001);
     const models = createModels(config, {
       transcribe: async () => ({ text }),
@@ -91,7 +91,7 @@ describe("Daten- und Konfigurationsintegrität", () => {
     );
     expect([...result.text]).toHaveLength(50001);
   });
-  it("weist zusätzliche Env-Dateien und unbekannte Schlüssel bereits vor Next ab", async () => {
+  it("rejects extra environment files and unknown keys before Next starts", async () => {
     await mkdir("temp/probes", { recursive: true });
     const dir = await mkdtemp(join(resolve("temp/probes"), "env-integrity-"));
     dirs.push(dir);

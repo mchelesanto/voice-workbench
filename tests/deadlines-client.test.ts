@@ -27,8 +27,8 @@ const input = {
   vocabulary: [],
 };
 afterEach(() => vi.useRealTimers());
-describe("Deadline und wirkliche Arbeitsdauer", () => {
-  it("antwortet fristgerecht, hält aber Plätze bis zum tatsächlichen Ende", async () => {
+describe("Deadlines and actual operation lifetime", () => {
+  it("responds by the deadline while holding slots until completion", async () => {
     vi.useFakeTimers();
     const controls: {
       resolve: (value: { text: string }) => void;
@@ -66,7 +66,7 @@ describe("Deadline und wirkliche Arbeitsdauer", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(slots.active).toBe(0);
   });
-  it("begrenzt viele kleine Chunks ohne große Datenmengen", async () => {
+  it("limits small chunks without requiring large payloads", async () => {
     let count = 0;
     const stream = new ReadableStream<Uint8Array>({
       pull(c) {
@@ -89,7 +89,7 @@ describe("Deadline und wirkliche Arbeitsdauer", () => {
       ),
     ).rejects.toMatchObject({ code: "request_too_fragmented" });
   });
-  it("unterdrückt freie Warntexte des echten SDK", async () => {
+  it("suppresses unrestricted warnings from the real SDK", async () => {
     const emit = vi.spyOn(process, "emitWarning").mockImplementation(() => {});
     const fake = new MockTranscriptionModelV4({
       doGenerate: async () => ({
@@ -109,8 +109,8 @@ describe("Deadline und wirkliche Arbeitsdauer", () => {
     expect(emit).not.toHaveBeenCalled();
   });
 });
-describe("Geteilter Consumervertrag", () => {
-  it("erkennt kanonische Settings-Replays und endliche Retryregeln", () => {
+describe("Shared client contract", () => {
+  it("recognizes canonical settings replays and bounded retries", () => {
     expect(
       classifySettingsConflict(
         { vocabulary: [" Café ", "Café"], expectedRevision: 1 },
@@ -145,7 +145,7 @@ describe("Geteilter Consumervertrag", () => {
       }),
     ).toBe("never");
   });
-  it("führt auch Konfigurationsfehler durch Request-ID und gemeinsamen Fehlervertrag", async () => {
+  it("routes configuration failures through request IDs and shared errors", async () => {
     const log = vi.fn();
     const handler = createApi({
       getConfig: () => {
@@ -168,7 +168,7 @@ describe("Geteilter Consumervertrag", () => {
   });
 });
 
-it("liefert sichere Feldpfade, ohne den ungültigen Wert zurückzugeben", async () => {
+it("returns safe field paths without echoing invalid values", async () => {
   const api = createApi({
     getConfig: () => config,
     getStore: vi.fn(),
@@ -194,7 +194,7 @@ it("liefert sichere Feldpfade, ohne den ungültigen Wert zurückzugeben", async 
   expect(JSON.stringify(error)).not.toContain("PRIVATE");
 });
 
-it("unterscheidet bestätigte Replays von neueren Fassungen und fremdem Ursprung", () => {
+it("distinguishes confirmed replays from newer versions and different origins", () => {
   const input = {
     title: "Alt",
     body: "Alt",

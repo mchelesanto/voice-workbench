@@ -1,33 +1,41 @@
 # Voice Workbench
 
-## Projektstruktur
+## Structure
 
-- src/server: lokale API, Datenzugriff und Modelladapter.
-- src/shared: gemeinsame Typen, Validierung und Antwortverträge.
-- app/api: Next.js-Routeneinstieg.
-- db/migrations: versionierte SQL-Migrationen.
-- scripts: Konfiguration, Start und Migration.
-- tests: deterministische Tests mit synthetischen Daten.
-- docs: Architektur und Funktionsbeschreibung.
+- `src/client`: browser workspace, recording, local recovery, editor state, and export.
+- `src/server`: local API, storage, and model adapters.
+- `src/shared`: shared types, validation, and response contracts.
+- `app`: Next.js pages, application styles, and API route entry.
+- `proxy.ts`: page security headers and per-request content-security-policy nonce.
+- `db/migrations`: versioned SQL migrations.
+- `scripts`: configuration, startup, and migration tooling.
+- `tests`: deterministic tests with synthetic data.
+- `docs`: architecture and functional contracts.
 
-## Entwicklung
+## Development
 
-Node.js 24 oder neuer und npm verwenden. Abhängigkeiten mit npm ci installieren.
+Use Node.js 24 or newer and npm. Install dependencies with `npm ci`.
 
-- npm run dev: Entwicklungsserver auf 127.0.0.1:3210.
-- npm run build: Produktionsbuild ohne erforderliche Zugangsdaten.
-- npm start: Produktionsserver.
-- npm run db:migrate: Datenbankschema aktualisieren.
-- npm test: Verhaltenstests ohne externe Dienste.
-- npm run typecheck, npm run lint und npm run format:check: Quellcode prüfen.
-- npm run format: Quellcode, Tests und Konfiguration formatieren.
+- `npm run dev`: development server on `127.0.0.1:3210`.
+- `npm run build`: production build without credentials.
+- `npm start`: production server.
+- `npm run db:migrate`: apply database migrations.
+- `npm test`: behavior tests without external services.
+- `npm run typecheck`, `npm run lint`, `npm run format:check`: source validation.
+- `npm run format`: format source, tests, and configuration.
 
-TypeScript bleibt strikt. Oberfläche und Dokumentation sind deutsch, technische Identifier englisch. Bestehende gemeinsame Schemas und Fehlerantworten verwenden.
+Keep TypeScript strict. UI copy, runtime messages, identifiers, comments, and test descriptions are English. Multilingual transcription and vocabulary fixtures remain intentional. Use existing shared schemas and errors. Do not import server modules into the client.
 
-## Daten und Konfiguration
+## Browser behavior
 
-Anwendungseinstellungen stehen ausschließlich in .env.local. Zugangs- und Plattformschlüssel dürfen weder in Git noch in Logs oder Browserartefakte gelangen. Die Anwendung bindet nur an Loopback.
+Persist completed recordings before upload and finished transcripts before cloud creation. Separate drafts by editor instance. Preserve local edits during pending requests and revision conflicts. Do not automatically retry model calls. Use existing retry and replay classifiers for data requests.
 
-Angewendete Migrationen sind unveränderlich; Schemaänderungen benötigen eine neue nummerierte SQL-Datei. LF-Zeilenenden beibehalten. Audio, temporäre Daten und lokale Prüfdateien gehören nicht in die Versionsverwaltung.
+Keep desktop and mobile workflows complete. Use the application tokens, visible keyboard focus, accessible action names, and reduced-motion support. Do not render transcript or model text as HTML. Clipboard success requires a fulfilled write; downloads use safe filenames.
 
-Der aktuelle Funktionsumfang steht in README.md. API- und Datenverträge stehen in docs/design/voice-workbench.md.
+## Data and configuration
+
+Application configuration belongs only in `.env.local`. Never put credentials in Git, logs, or browser artifacts. Bind only to loopback.
+
+Applied migrations are immutable. Schema changes require a new numbered SQL file. Preserve LF line endings. Keep audio, temporary data, and local verification files out of version control.
+
+See `README.md` for setup and current functionality. API and data contracts live in `docs/design/voice-workbench.md`.

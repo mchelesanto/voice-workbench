@@ -13,7 +13,7 @@ if (
   !["dev", "start", "build"].includes(mode ?? "") ||
   process.argv.length !== 3
 ) {
-  console.error("Aufruf: npm run dev, npm start oder npm run build");
+  console.error("Usage: npm run dev, npm start, or npm run build");
   process.exit(1);
 }
 try {
@@ -46,7 +46,7 @@ try {
     });
   }
   child.on("error", () => {
-    console.error("Der lokale Server konnte nicht gestartet werden.");
+    console.error("The local server could not start.");
     process.exitCode = 1;
   });
   child.on("exit", (code, signal) => {
@@ -58,7 +58,7 @@ try {
   });
 } catch (error) {
   console.error(
-    error instanceof Error ? error.message : "Konfiguration ungültig.",
+    error instanceof Error ? error.message : "Invalid configuration.",
   );
   process.exitCode = 1;
 }

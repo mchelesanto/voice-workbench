@@ -13,7 +13,7 @@ export async function withModelSlot<T>(
   try {
     return await run({
       retainUntil(work) {
-        // Ein Slot gehört zu genau einem SDK-Vorgang.
+        // Each slot belongs to exactly one SDK operation.
         if (retained) throw new Error("Model lease already retained");
         retained = work.then(
           () => undefined,
@@ -40,7 +40,7 @@ export function untilAborted<T>(
       reject(signal.reason);
     };
     signal.addEventListener("abort", abort, { once: true });
-    // Auch verspätete Ablehnungen werden konsumiert.
+    // Consume late rejections as well.
     work.then(
       (value) => {
         clean();

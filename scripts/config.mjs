@@ -4,7 +4,7 @@ import { parseEnv } from "node:util";
 export class ConfigurationError extends Error {
   /** @param {string} field */
   constructor(field) {
-    super(`Projektkonfiguration fehlt oder ist ungültig: ${field}`);
+    super(`Project configuration is missing or invalid: ${field}`);
     this.name = "ConfigurationError";
   }
 }
@@ -46,7 +46,7 @@ export function readProjectEnvironment(root, required = true) {
   ]) {
     if (existsSync(join(root, name)))
       throw new ConfigurationError(
-        "Nur .env.local ist erlaubt; zusätzliche Env-Datei entfernen.",
+        "Only .env.local is allowed; remove the additional environment file.",
       );
   }
   if (!required && !existsSync(join(root, ".env.local"))) return {};
@@ -57,7 +57,7 @@ export function readProjectEnvironment(root, required = true) {
     throw new ConfigurationError(".env.local");
   }
   if (Object.keys(values).some((key) => !CONFIG_KEYS.includes(key)))
-    throw new ConfigurationError(".env.local enthält unbekannte Schlüssel.");
+    throw new ConfigurationError(".env.local contains unknown keys.");
   return values;
 }
 /** @param {string} root */
@@ -105,7 +105,7 @@ export function applicationEnvironment(config, inherited) {
     APP_ORIGIN: config.origin,
   };
   delete env.TURSO_API_KEY;
-  // Next darf keine automatisch exponierten Geheimnisse aus der Elternshell übernehmen.
+  // Do not inherit automatically exposed secrets from the parent shell.
   for (const key of Object.keys(env))
     if (key.startsWith("NEXT_PUBLIC_")) delete env[key];
   return env;
@@ -114,7 +114,7 @@ export function applicationEnvironment(config, inherited) {
 /** @param {string} root @param {NodeJS.ProcessEnv} inherited */
 export function buildEnvironment(root, inherited) {
   readProjectEnvironment(root, false);
-  // Bereits gesetzte leere Werte verhindern das erneute Laden echter Schlüssel durch Next.
+  // Explicit empty values prevent Next from reloading real credentials.
   return applicationEnvironment(
     {
       databaseUrl: "",

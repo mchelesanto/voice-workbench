@@ -1,6 +1,6 @@
 # ADR 0001: Lokales Next.js mit gemeinsamer Turso-Datenbank
 
-Status: angenommen, Serverteil implementiert. Die Oberfläche folgt separat.
+Status: angenommen, Serverteil und Browserclient implementiert und geprüft. Die vollständige Release-Abnahme steht noch aus.
 
 ## Kontext
 

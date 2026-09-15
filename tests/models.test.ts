@@ -15,8 +15,8 @@ const input = {
   vocabulary: ["Eigener Begriff"],
 };
 const signal = () => new AbortController().signal;
-describe("Providervertrag", () => {
-  it("hält Kostenwiederholungen aus und reicht Fachbegriffe passend weiter", async () => {
+describe("Provider contract", () => {
+  it("disables billable retries and maps vocabulary for each provider", async () => {
     const transcribe = vi
       .fn()
       .mockResolvedValue({ text: " Noch nicht veröffentlichen. " });
@@ -36,7 +36,7 @@ describe("Providervertrag", () => {
     });
     expect(transcribe.mock.calls[1][0].abortSignal).toBeInstanceOf(AbortSignal);
   });
-  it("leere oder zu große Transkripte werden nicht als gespeicherter Erfolg angeboten", async () => {
+  it("does not offer empty or oversized transcripts as successful results", async () => {
     const transcribe = vi.fn().mockResolvedValue({ text: "   " });
     const service = createModels(config, { transcribe, generateText: vi.fn() });
     await expect(service.transcribe(input, signal())).rejects.toMatchObject({
@@ -49,7 +49,7 @@ describe("Providervertrag", () => {
       code: "output_too_large",
     });
   });
-  it("übersetzt Anbieterfehler ohne rohe Details, ohne Fallback", async () => {
+  it("maps provider errors without raw details or fallback", async () => {
     const transcribe = vi.fn();
     const service = createModels(config, { transcribe, generateText: vi.fn() });
     for (const [statusCode, code] of [
@@ -72,7 +72,7 @@ describe("Providervertrag", () => {
     }
     expect(transcribe).toHaveBeenCalledTimes(8);
   });
-  it("weist nicht verfügbare und inkompatible Auswahl vor SDK-Aufruf ab", async () => {
+  it("rejects unavailable and incompatible selections before SDK calls", async () => {
     const transcribe = vi.fn();
     const service = createModels(
       { ...config, googleKey: "" },
@@ -89,7 +89,7 @@ describe("Providervertrag", () => {
     ).rejects.toMatchObject({ code: "unsupported_mode" });
     expect(transcribe).not.toHaveBeenCalled();
   });
-  it("startet keine bereits abgebrochene Anfrage", async () => {
+  it("does not start an already canceled request", async () => {
     const transcribe = vi.fn();
     const service = createModels(config, { transcribe, generateText: vi.fn() });
     await expect(
@@ -97,7 +97,7 @@ describe("Providervertrag", () => {
     ).rejects.toMatchObject({ code: "request_aborted" });
     expect(transcribe).not.toHaveBeenCalled();
   });
-  it("bietet nur vollständige Verbesserungen an und bewahrt Text als Eingabe", async () => {
+  it("offers only complete suggestions and preserves text as input", async () => {
     const generateText = vi
       .fn()
       .mockResolvedValue({ text: "Vollständig", finishReason: "stop" });

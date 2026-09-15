@@ -28,7 +28,7 @@ afterEach(async () => {
   for (const dir of folders.splice(0))
     await rm(dir, { recursive: true, force: true });
 });
-describe("Echte Prozessgrenzen", () => {
+describe("Real process boundaries", () => {
   it.each(["SIGINT", "SIGTERM"] as const)(
     "ordnet ein weitergereichtes %s als kontrollierten Stopp ein",
     async (signal) => {
@@ -60,7 +60,7 @@ describe("Echte Prozessgrenzen", () => {
       expect(result).toBe(0);
     },
   );
-  it("hält Schlüssel auch nach der tatsächlichen Next-Env-Auflösung aus dem Build", async () => {
+  it("keeps credentials out of builds after real Next environment resolution", async () => {
     const root = await fixture();
     const environment = buildEnvironment(root, {
       ...process.env,

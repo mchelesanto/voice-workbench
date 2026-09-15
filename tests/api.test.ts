@@ -52,8 +52,8 @@ beforeEach(async () => {
   });
 });
 afterEach(() => db.close());
-describe("Lokale API", () => {
-  it("prüft jede deklarierte Route vor Body-, Modell- oder Datenzugriff", async () => {
+describe("Local API", () => {
+  it("guards every declared route before body, model, or storage access", async () => {
     const routes = [
       ["/config", "GET"],
       ["/notes", "GET"],
@@ -74,14 +74,14 @@ describe("Lokale API", () => {
     }
     expect(storeCalls).not.toHaveBeenCalled();
   });
-  it("verlangt bei Writes Origin und eigenen Header", async () => {
+  it("requires Origin and the application header for writes", async () => {
     for (const key of ["origin", "x-voice-workbench"]) {
       const r = request("/settings", "PUT", {});
       r.headers.delete(key);
       expect((await api(r)).status).toBe(403);
     }
   });
-  it("liefert nur öffentliche Verfügbarkeit, keine Konfigurationswerte", async () => {
+  it("returns public availability without configuration values", async () => {
     const r = await api(request("/config"));
     const text = await r.text();
     expect(r.headers.get("cache-control")).toBe("no-store");
@@ -92,7 +92,7 @@ describe("Lokale API", () => {
         .available,
     ).toBe(false);
   });
-  it("meldet Routing-, Methoden-, Typ- und Feldfehler einheitlich", async () => {
+  it("uses consistent routing, method, type, and field errors", async () => {
     for (const [r, status, code] of [
       [request("/missing"), 404, "api_not_found"],
       [request("/config", "POST", {}), 405, "method_not_allowed"],
@@ -117,7 +117,7 @@ describe("Lokale API", () => {
       expect((await res.json()).error.code).toBe(code);
     }
   });
-  it("erlaubt Erstellen, Lesen, CAS-Edit, Konflikt und Löschen über denselben Vertrag", async () => {
+  it("supports create, read, conditional edit, conflict, and delete through one contract", async () => {
     const id = randomUUID();
     const body = {
       title: "Gedanke",
@@ -148,7 +148,7 @@ describe("Lokale API", () => {
     ).toBe(204);
     expect((await api(request("/notes/" + id, "PUT", body))).status).toBe(410);
   });
-  it("begrenzt echte Bytes auch ohne Content-Length", async () => {
+  it("limits actual bytes without Content-Length", async () => {
     const r = new Request("http://localhost:3210", {
       method: "POST",
       body: "abcdef",
@@ -157,7 +157,7 @@ describe("Lokale API", () => {
       code: "request_too_large",
     });
   });
-  it("beendet stockende Bodies und gibt den Reader frei", async () => {
+  it("stops stalled bodies and releases the reader", async () => {
     const cancel = vi.fn();
     const stream = new ReadableStream({ cancel });
     const r = new Request("http://localhost:3210", {
@@ -194,8 +194,8 @@ function audioRequest(extra = false, invalid = false) {
     body: form,
   });
 }
-describe("Audio und Ressourcen im HTTP-Ablauf", () => {
-  it("normalisiert einen vollständigen Multipart-Aufruf zum Modelladapter", async () => {
+describe("HTTP audio and resource handling", () => {
+  it("normalizes a complete multipart request for the model adapter", async () => {
     model.transcribe.mockResolvedValue({
       text: "Test",
       provider: "google",
@@ -211,12 +211,12 @@ describe("Audio und Ressourcen im HTTP-Ablauf", () => {
     });
     expect(model.transcribe.mock.calls[0][0].audio).toBeInstanceOf(Uint8Array);
   });
-  it("lehnt doppelte Felder und unbekannte Audiodaten vor dem Modellaufruf ab", async () => {
+  it("rejects duplicate fields and unknown audio before calling the model", async () => {
     expect((await api(audioRequest(true))).status).toBe(400);
     expect((await api(audioRequest(false, true))).status).toBe(415);
     expect(model.transcribe).not.toHaveBeenCalled();
   });
-  it("begrenzt Parallelität und gibt Plätze auch nach Fehlern frei", async () => {
+  it("limits concurrency and releases slots after errors", async () => {
     let release!: () => void;
     const wait = new Promise<void>((resolve) => {
       release = resolve;
@@ -250,7 +250,7 @@ describe("Audio und Ressourcen im HTTP-Ablauf", () => {
         .status,
     ).toBe(200);
   });
-  it("bewahrt erfolgreiche Antworten auch bei einem defekten Diagnosekanal", async () => {
+  it("preserves successful responses when diagnostics fail", async () => {
     const handle = createApi({
       getConfig: () => config,
       getStore: () => new Store(db),

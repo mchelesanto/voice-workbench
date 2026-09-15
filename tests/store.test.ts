@@ -22,8 +22,8 @@ beforeEach(async () => {
 });
 afterEach(() => client.close());
 
-describe("Notizen als gemeinsamer Datenbestand", () => {
-  it("erhält Original und fremde Edits bei wiederholtem Erstellen", async () => {
+describe("Shared note storage", () => {
+  it("preserves originals and concurrent edits on repeated creation", async () => {
     const id = randomUUID();
     expect((await store.create(id, original)).revision).toBe(1);
     const changed = await store.update(id, {
@@ -39,7 +39,7 @@ describe("Notizen als gemeinsamer Datenbestand", () => {
       store.create(id, { ...original, originalText: "Anderer Ursprung" }),
     ).rejects.toMatchObject({ code: "id_conflict", status: 409 });
   });
-  it("liefert die aktuelle Fassung bei veralteter Revision, ohne sie zu ändern", async () => {
+  it("returns the current version for stale revisions without changing it", async () => {
     const id = randomUUID();
     await store.create(id, original);
     await store.update(id, {
@@ -55,7 +55,7 @@ describe("Notizen als gemeinsamer Datenbestand", () => {
     });
     expect((await store.get(id)).body).toBe("A");
   });
-  it("bestätigt auch unveränderte Edits anhand RETURNING und erhöht die Revision", async () => {
+  it("confirms unchanged edits through RETURNING and increments the revision", async () => {
     const id = randomUUID();
     await store.create(id, original);
     expect(
@@ -68,7 +68,7 @@ describe("Notizen als gemeinsamer Datenbestand", () => {
       ).revision,
     ).toBe(2);
   });
-  it("entfernt Inhalte und verhindert verspätete Wiederanlage dauerhaft", async () => {
+  it("removes content and permanently blocks late recreation", async () => {
     const id = randomUUID();
     await store.create(id, original);
     await expect(store.delete(id, 2)).rejects.toMatchObject({
@@ -89,7 +89,7 @@ describe("Notizen als gemeinsamer Datenbestand", () => {
     expect(Object.keys(marker).sort()).toEqual(["deleted_at", "id"]);
     expect((await store.list()).items).toHaveLength(0);
   });
-  it("unterscheidet unbekannte IDs von gelöschten IDs", async () => {
+  it("distinguishes unknown IDs from deleted IDs", async () => {
     await expect(store.get(randomUUID())).rejects.toMatchObject({
       status: 404,
     });
@@ -97,8 +97,8 @@ describe("Notizen als gemeinsamer Datenbestand", () => {
       code: "note_not_found",
     });
   });
-  it("paginiert ohne doppelte IDs und begrenzt Vorschautexte", async () => {
-    // Gleiche Zeitwerte prüfen die UUID als zweiten Sortierschlüssel.
+  it("paginates without duplicate IDs and bounds previews", async () => {
+    // Equal timestamps exercise the UUID as the secondary sort key.
     const stamp = "2026-01-01T00:00:00.000Z";
     for (let n = 0; n < 53; n++) {
       await store.create(randomUUID(), { ...original, body: "x".repeat(200) });
@@ -120,7 +120,7 @@ describe("Notizen als gemeinsamer Datenbestand", () => {
       code: "invalid_input",
     });
   });
-  it("erlaubt keine Änderung der unveränderlichen Ursprungsfelder durch SQL", async () => {
+  it("prevents SQL changes to immutable origin fields", async () => {
     const id = randomUUID();
     await store.create(id, original);
     await expect(
@@ -133,8 +133,8 @@ describe("Notizen als gemeinsamer Datenbestand", () => {
   });
 });
 
-describe("Gemeinsames Vokabular", () => {
-  it("beginnt leer und erkennt konkurrierende Änderungen", async () => {
+describe("Shared vocabulary", () => {
+  it("starts empty and detects concurrent changes", async () => {
     expect(await store.settings()).toEqual({ vocabulary: [], revision: 1 });
     await store.saveSettings({
       vocabulary: ["Eigener Begriff"],
@@ -150,13 +150,13 @@ describe("Gemeinsames Vokabular", () => {
       current: { vocabulary: ["Eigener Begriff"], revision: 2 },
     });
   });
-  it("behandelt fehlende Singletonzeile als Schemafehler", async () => {
+  it("treats missing singleton rows as schema errors", async () => {
     await client.execute("DELETE FROM settings");
     await expect(store.settings()).rejects.toMatchObject({
       code: "schema_unavailable",
     });
   });
-  it("übersetzt Datenbankausfälle in abstrakte Fehler", async () => {
+  it("maps database failures to sanitized errors", async () => {
     await client.execute("DROP TABLE notes");
     await expect(store.list()).rejects.toMatchObject({
       code: "storage_unavailable",

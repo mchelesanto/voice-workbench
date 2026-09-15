@@ -2,100 +2,85 @@ import "server-only";
 import type { ErrorCode, FieldIssue } from "../shared/responses";
 export type { ErrorCode } from "../shared/responses";
 const definitions = {
-  forbidden_origin: [403, "Dieser Zugriff ist nicht erlaubt."],
-  method_not_allowed: [405, "Diese Methode ist hier nicht verfügbar."],
-  api_not_found: [404, "Dieser Endpunkt existiert nicht."],
-  unsupported_content_type: [415, "Dieses Datenformat wird nicht unterstützt."],
-  invalid_input: [400, "Bitte prüfe die übergebenen Werte."],
+  forbidden_origin: [403, "This request is not allowed."],
+  method_not_allowed: [405, "This method is not available here."],
+  api_not_found: [404, "This endpoint does not exist."],
+  unsupported_content_type: [415, "This data format is not supported."],
+  invalid_input: [400, "Please check the submitted values."],
   request_too_fragmented: [
     413,
-    "Die Übertragung enthält zu viele Einzelstücke. Bitte versuche es erneut.",
+    "The upload contains too many chunks. Please try again.",
   ],
-  request_too_large: [413, "Die Anfrage ist zu groß."],
+  request_too_large: [413, "The request is too large."],
   audio_too_large: [
     413,
-    "Die Aufnahme ist größer als 25 MiB. Sie bleibt auf diesem Gerät verfügbar.",
+    "The recording exceeds 25 MiB. It remains available on this device.",
   ],
-  request_timeout: [
-    408,
-    "Die Übertragung wurde nicht rechtzeitig abgeschlossen.",
-  ],
-  request_aborted: [408, "Die Übertragung wurde abgebrochen."],
+  request_timeout: [408, "The upload did not finish in time."],
+  request_aborted: [408, "The upload was canceled."],
   unsupported_audio: [
     415,
-    "Das Audioformat wurde nicht erkannt oder passt nicht zur Datei.",
+    "The audio format was not recognized or does not match the file.",
   ],
-  unsupported_mode: [
-    400,
-    "Der gewählte Anbieter unterstützt diesen Modus nicht.",
-  ],
-  provider_unavailable: [
-    503,
-    "Für diesen Anbieter fehlt die lokale Konfiguration.",
-  ],
+  unsupported_mode: [400, "The selected provider does not support this mode."],
+  provider_unavailable: [503, "This provider is not configured locally."],
   provider_auth_failed: [
     502,
-    "Der Anbieter hat den Zugang abgelehnt. Bitte prüfe den API-Schlüssel.",
+    "The provider rejected the credentials. Please check the API key.",
   ],
   provider_rate_limited: [
     429,
-    "Der Anbieter nimmt gerade keine weitere Anfrage an. Bitte versuche es später erneut.",
+    "The provider is not accepting more requests right now. Please try again later.",
   ],
-  busy: [
-    429,
-    "Es werden bereits zwei Modellanfragen verarbeitet. Bitte warte kurz.",
-  ],
+  busy: [429, "Two model requests are already running. Please wait a moment."],
   provider_timeout: [
     504,
-    "Die Verarbeitung hat zu lange gedauert. Ein neuer Versuch kann erneut berechnet werden.",
+    "Processing took too long. Another attempt may incur an additional charge.",
   ],
   no_transcript: [
     422,
-    "Es wurde kein verwendbares Transkript erzeugt. Deine Aufnahme bleibt erhalten.",
+    "No usable transcript was produced. Your recording is still available.",
   ],
   transcription_failed: [
     502,
-    "Die Transkription ist fehlgeschlagen. Deine Aufnahme bleibt erhalten.",
+    "Transcription failed. Your recording is still available.",
   ],
-  enhancement_failed: [502, "Der Text konnte nicht überarbeitet werden."],
+  enhancement_failed: [502, "The text could not be refined."],
   enhancement_incomplete: [
     502,
-    "Die Überarbeitung wurde nicht vollständig abgeschlossen. Dein Text bleibt unverändert.",
+    "Refining did not finish completely. Your text is unchanged.",
   ],
   enhancement_input_too_long: [
     400,
-    "Die Textverbesserung unterstützt bis zu 12.000 Zeichen. Speichern und Export bleiben möglich.",
+    "Refining supports up to 12,000 characters. You can still save and export.",
   ],
   output_too_large: [
     502,
-    "Die Modellantwort überschreitet die unterstützte Textlänge.",
+    "The model response exceeds the supported text length.",
   ],
   storage_unavailable: [
     503,
-    "Die Datenbank ist gerade nicht erreichbar. Dein lokaler Entwurf bleibt erhalten.",
+    "The database is unavailable. Your local draft is still available.",
   ],
   schema_unavailable: [
     503,
-    "Die Datenbank muss mit npm run db:migrate vorbereitet werden.",
+    "Prepare the database by running npm run db:migrate.",
   ],
   configuration_unavailable: [
     503,
-    "Die lokale Projektkonfiguration fehlt oder ist ungültig.",
+    "The local project configuration is missing or invalid.",
   ],
-  note_not_found: [404, "Die Notiz wurde nicht gefunden."],
+  note_not_found: [404, "The note was not found."],
   note_deleted: [
     410,
-    "Diese Notiz wurde gelöscht. Du kannst deinen Entwurf als neue Notiz sichern.",
+    "This note was deleted. You can save your draft as a new note.",
   ],
-  id_conflict: [
-    409,
-    "Diese Notizkennung gehört bereits zu einer anderen Aufnahme.",
-  ],
+  id_conflict: [409, "This note ID already belongs to another recording."],
   revision_conflict: [
     409,
-    "Die Notiz oder Einstellung wurde inzwischen geändert. Beide Fassungen bleiben verfügbar.",
+    "This note or setting has changed. Both versions remain available.",
   ],
-  internal_error: [500, "Die Anfrage konnte nicht verarbeitet werden."],
+  internal_error: [500, "The request could not be processed."],
 } as const satisfies Record<ErrorCode, readonly [number, string]>;
 export class ApiError extends Error {
   readonly status: number;

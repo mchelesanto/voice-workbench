@@ -2,19 +2,33 @@
 
 ## Unreleased
 
-### Hinzugefügt
+### Added
 
-- Lokale Next.js-API für Notizen, Vokabular, Transkription und Textverbesserung.
-- Transaktionale Speicherung mit Revisionskonflikten, Wiederholungssemantik und Löschmarkern.
-- Versionierte SQL-Migrationen mit Prüfsummen und atomarer Anwendung.
-- Projektspezifischer Start ohne Übernahme fremder Zugangsdaten.
-- Provideradapter, Ressourcenbegrenzung und abstrahierte Fehlermeldungen.
-- Deterministische Verhaltenstests und reproduzierbare Prüfkommandos.
-- Gemeinsame Antwort-, Feldfehler- und Replayverträge für Browser-Clients.
-- Historische Modellkennungen und Unicode-Vorschauen auf allen Verlaufsseiten.
-- Begrenzte Audio-Streams und erzwungene Antwortfristen mit korrekter Ressourcenfreigabe.
-- Einheitliche Konfigurationsprüfung für Start und Build sowie kontrollierte Prozessstopps.
+- Local Next.js API for notes, vocabulary, transcription, and text refinement.
+- Transactional storage with revision conflicts, replay semantics, and deletion markers.
+- Versioned SQL migrations with checksums and atomic application.
+- Project-scoped startup that does not inherit unrelated credentials.
+- Provider adapters, resource limits, and sanitized error messages.
+- Deterministic behavior tests and reproducible validation commands.
+- Shared response, field-error, and replay contracts for browser clients.
+- Historical model identifiers and complete Unicode previews across library pages.
+- Bounded audio streams and enforced response deadlines with correct resource lifetime.
+- Consistent configuration checks for startup and builds, plus controlled process termination.
+- Responsive English workspace with recording, local recovery, library, and editor.
+- Separate local editor drafts, revision conflict resolution, and visible save states.
+- Side-by-side refinement comparison, guarded undo of the previous working version, plain-text copying, and Markdown export.
+- Local audio playback, grouped recovery drafts, and independent local save retries.
+- Recoverable transcripts after browser-storage errors and durable oversized recordings.
+- Controlled dialog dismissal and local draft deletion across pending writes.
+- Compact mobile editing controls, visible copy actions, and readable status colors.
+- Vocabulary settings, provider availability, and separate audio download and deletion.
+- Per-request page CSP, keyboard-accessible dialogs, and reduced-motion support.
 
-### Geplant
+### Changed
 
-- Aufnahmeoberfläche, lokales Wiederherstellungsfach, Editor und Export.
+- Runtime messages, code comments, and test descriptions use English. Multilingual input remains supported.
+
+### Pending
+
+- Complete-application validation before the first release.
+- License and public repository visibility decisions.

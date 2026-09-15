@@ -1,67 +1,72 @@
 # Voice Workbench
 
-Eine persönliche Arbeitsfläche für Spracheingabe, überprüfbare Textverbesserung und Notizen auf mehreren Rechnern.
+A personal workspace for thinking out loud, shaping your words, and keeping notes across computers.
 
-## Projektstand
+Record a thought, keep the original transcript, and refine a separate working version. Your notes and vocabulary live in your own Turso database. Audio and recovery drafts stay in your browser.
 
-Die API für Notizen, Transkription und Textverbesserung ist implementiert. Die Aufnahme- und Bearbeitungsoberfläche befindet sich noch in Entwicklung; die Startseite enthält noch keine Benutzeroberfläche. Es ist noch kein vollständiges Release verfügbar.
+## Project status
 
-## Voraussetzungen und Einrichtung
+The local server and browser workspace are implemented and locally validated. This is a preview; complete-application validation is still pending before the first release.
 
-Node.js 24 oder neuer und npm. Eine eigene Turso-Datenbank und mindestens ein Transkriptionsanbieter sind für die spätere vollständige Nutzung erforderlich.
+## Quick start
 
-### Zugangsdaten vorbereiten
+Requires Node.js 24 or newer, npm, your own Turso database, and at least one transcription provider.
 
-Eine neue Datenbank im eigenen Turso-Konto anlegen und deren Verbindungs-URL übernehmen. Einen ausschließlich für diese Datenbank gültigen Token mit Daten- und Schemarechten erzeugen; Schemarechte werden für Migrationen benötigt. Den Plattform- oder Gruppentoken nicht verwenden.
+1. Install dependencies with `npm ci`.
+2. Copy `.env.example` to `.env.local` and configure the project.
+3. Apply migrations with `npm run db:migrate`.
+4. Run `npm run build`, then `npm start`.
+5. Open [localhost:3210](http://localhost:3210).
 
-Für Google einen API-Schlüssel im eigenen Google-AI-Konto erstellen und GOOGLE_GENERATIVE_AI_API_KEY setzen. Für Mistral einen Schlüssel im eigenen Mistral-Konto erstellen und MISTRAL_API_KEY setzen. Einer der beiden Anbieter reicht für Transkription; die separate Textverbesserung benötigt Mistral. Nicht konfigurierte Anbieter werden als nicht verfügbar ausgewiesen.
+For development, run `npm run dev`. The launcher binds only to `127.0.0.1:3210`. The default browser origin is `http://localhost:3210`; it must match `APP_ORIGIN`. Restart after changing configuration.
 
-Für einen weiteren Rechner dieselbe Turso-Datenbank verwenden und die Zugangsdaten dort in einer eigenen .env.local hinterlegen. Keine zweite Datenbank anlegen, wenn die Notizen gemeinsam verfügbar sein sollen. Audiodateien und noch nicht synchronisierte Entwürfe bleiben auf dem jeweiligen Gerät.
+## Configuration
 
-### Lokaler Start
+Create a dedicated Turso database and a token scoped to that database. The token needs data and schema permissions for migrations. Do not use a platform or group token in the application.
 
-1. Abhängigkeiten mit `npm ci` installieren.
-2. `.env.example` als `.env.local` kopieren und mit der eigenen Projektkonfiguration ausfüllen.
-3. Schema mit `npm run db:migrate` anlegen oder aktualisieren.
-4. Mit `npm run build` bauen und mit `npm start` starten.
+Set `GOOGLE_GENERATIVE_AI_API_KEY` for Google transcription, `MISTRAL_API_KEY` for Mistral transcription and optional text refinement, or both. Unconfigured providers are shown as unavailable. Provider selection does not change the language you speak; the interface is English.
 
-Die Verfügbarkeit der Anbindungen lässt sich anschließend unter [localhost:3210/api/config](http://localhost:3210/api/config) prüfen; diese Antwort enthält keine Schlüsselwerte.
+On another computer, use the same Turso connection in that computer's own `.env.local`. Do not create a second database if you want a shared library. Audio and unsynchronized drafts remain on their original device.
 
-Für die Entwicklung: `npm run dev`. Der Launcher bindet ausschließlich `127.0.0.1:3210`; der Browser-Origin ist standardmäßig `http://localhost:3210`. Eine Änderung der Konfiguration benötigt einen Serverneustart. Geerbte Datenbank- und Modellschlüssel übersteuern die Produktdatei nicht. Zusätzliche Env-Dateien und unbekannte Schlüssel werden vor Start und Build abgewiesen. Ein Build funktioniert auch ohne Konfigurationsdatei und ohne Zugangsdaten.
+Credentials belong exclusively in the ignored `.env.local`. The launcher rejects extra environment files and unknown keys, and inherited credentials do not override the project file. Builds work without credentials. Credentials are never returned to the browser.
 
-Zugangsdaten gehören ausschließlich in die ignorierte `.env.local`. Keine Konfiguration eines anderen Projekts übernehmen. Zur Laufzeit genügt ein Token der eigenen Datenbank, kein Turso-Plattformtoken. API-Schlüssel werden niemals an den Browser zurückgegeben.
+## Working with your voice
 
-## Implementierter Serverteil
+- **Record:** Choose a provider and transcription mode, then start. Each recording becomes a new note. Recording stops at ten minutes or the byte limit.
+- **Write:** Edit the title and working text. The original transcript remains unchanged. Edits are saved locally before cloud writes.
+- **Refine:** Ask Mistral to clean up, structure, or translate your text into English. Compare the exact input with the suggestion, then explicitly apply it. Undo restores the previous working version within the current editor session. If you edit again, that previous version remains available to copy without overwriting the newer work. A changed source makes an older suggestion ineligible for application.
+- **Recover:** Open **Local audio & drafts** to recover completed recordings and pending drafts. Drafts from separate tabs are preserved independently and grouped by note. A confirmed restoration retires its exact source snapshot, preserving newer edits. A local-only save retry never starts a model request. If local storage rejects a finished transcript, it remains visible for copying or Markdown download.
+- **Resolve:** Concurrent edits show both versions. Choose explicitly; the application never silently overwrites another version.
+- **Use elsewhere:** Copy plain text or download a Markdown note. Listen to locally available audio, or download and delete it separately.
 
-- Notizen mit unveränderlichem Ursprung, bearbeitbarer Fassung und Revisionsprüfung.
-- Wiederholbares Erstellen ohne Überschreiben späterer Änderungen.
-- Dauerhafte Löschmarker gegen verspätete Wiederanlage.
-- Gemeinsames Vokabular mit Konflikterkennung.
-- Google- und Mistral-Transkription mit getrennten Fähigkeiten.
-- Optionale Textverbesserung als eigenständiger Vorschlag.
-- Begrenzte Audioannahme, Zeitlimits und zwei parallele Modellanfragen pro Serverprozess.
-- Einheitliche Fehlerantworten ohne Anbieterinhalte oder Zugangsdaten.
+**Saved on this device** and **Saved to cloud** mean different things. Cloud failure leaves a recoverable local copy. Model requests are never automatically retried; repeating an interrupted request may incur another charge.
 
-Die API ist für die lokale Anwendung bestimmt. Schreibaufrufe erfordern den konfigurierten Origin sowie `X-Voice-Workbench: 1`. Konkrete Routen, Felder und Fehlercodes stehen in `docs/design/voice-workbench.md`.
+The library filter searches titles and the first 140 characters of each loaded note, not full text. Use **Load more notes** to include older notes. The refresh button updates both the library and the open note, as does returning to the tab.
 
-## Prüfungen
+## Checks
 
-- `npm test`: deterministische Tests ohne Anbieter- oder Cloudaufrufe.
-- `npm run typecheck`: TypeScript einschließlich Tests und Startskripten.
-- `npm run lint`: Codeprüfung.
-- `npm run format:check`: einheitliche Formatierung.
-- `npm run build`: Produktionsbuild.
+- `npm test`: deterministic tests without live provider or cloud calls.
+- `npm run typecheck`: strict TypeScript checks, including tests and launch scripts.
+- `npm run lint`: source checks.
+- `npm run format:check`: formatting checks.
+- `npm run build`: production build without credentials.
 
-`npm run format` formatiert ausschließlich Quellcode, Skripte, Tests und Konfigurationen. Der Checkout verwendet auch auf Windows LF-Zeilenenden, damit die Migrationsprüfsummen gleich bleiben. Angewendete SQL-Migrationen werden nicht verändert; Änderungen erhalten eine neue Migrationsdatei. Der Runner prüft gespeicherte Checksummen und führt jede Datei transaktional aus.
+`npm run format` formats source, scripts, tests, and configuration. SQL migrations are immutable once applied. Add a new migration for schema changes. LF line endings keep migration checksums stable across operating systems.
 
-## Datenfluss und Grenzen
+## Data and limits
 
-Audio und Vokabular werden bei einem gestarteten Transkriptionsaufruf an den gewählten Anbieter übertragen. Die optionale Textverbesserung sendet Text an Mistral. Texte und Einstellungen liegen in Turso. Der geplante Browserteil hält Audio und noch nicht synchronisierte Entwürfe auf dem jeweiligen Gerät; Audio wird nicht zwischen Geräten synchronisiert.
+Transcription sends audio and vocabulary to your selected provider. Refinement sends text to Mistral. Notes and settings are stored in Turso. Audio and pending drafts remain in IndexedDB in the current browser profile. Clearing browser data removes this local recovery space. Download important audio for a separate backup.
 
-Textverbesserung kann Bedeutung oder Reihenfolge verändern, auch bei ausdrücklichen Erhaltungsanweisungen. Sie liefert deshalb ausschließlich einen Vorschlag. Das Original bleibt erhalten; unvollständig beendete Modellantworten werden nicht angeboten.
+Refinement can change meaning despite preservation instructions. Review names, order, conditions, and negations. Incomplete model responses are not offered for application. Refinement accepts up to 12,000 UTF-16 units; larger notes can still be saved and exported.
 
-Die Anwendung bietet keine Authentifizierung gegenüber anderen lokalen Prozessen. Sie ist nicht für öffentliche Netzwerkfreigabe eingerichtet. Der Datenbanktoken ist auf eine Datenbank beschränkt, besitzt innerhalb dieser Datenbank aber auch die für Migrationen verwendeten Schemarechte. Die zehn Minuten Aufnahmezeit sind eine geplante UI-Grenze; serverseitig gelten Byte- und Zeitgrenzen, keine nachgemessene Audiodauer.
+This is a local single-user application, without authentication against other processes on the same computer. It is not configured for public network access. There is no general offline synchronization or guaranteed recovery of a recording still in progress during a browser crash. Server limits bound upload bytes and processing time, not decoded audio duration. Two model requests can run at once per local server process.
 
-## Lizenz
+## Technical reference
 
-Derzeit ist keine Nutzungslizenz für den Anwendungscode vergeben.
+- `docs/design/voice-workbench.md`: API, storage, recovery, and interaction contracts.
+- `docs/adr/0001-local-next-and-shared-turso.md`: runtime and persistence decision.
+- `src/shared/contracts.ts` and `src/shared/responses.ts`: shared validation, response, and retry contracts.
+
+## License
+
+No usage license has been granted for the application code yet.

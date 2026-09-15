@@ -15,14 +15,14 @@ try {
   const names = await migrate(client, join(root, "db/migrations"));
   console.log(
     names.length
-      ? `Migrationen angewendet: ${names.join(", ")}`
-      : "Datenbankschema ist aktuell.",
+      ? `Applied migrations: ${names.join(", ")}`
+      : "Database schema is up to date.",
   );
 } catch (error) {
   console.error(
     error instanceof ConfigurationError
       ? error.message
-      : "Migration fehlgeschlagen. Schema oder Verbindung prüfen; keine Fehlerdetails mit Zugangsdaten ausgegeben.",
+      : "Migration failed. Check the schema or connection; credential-bearing error details are not displayed.",
   );
   process.exitCode = 1;
 } finally {

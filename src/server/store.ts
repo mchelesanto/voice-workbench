@@ -82,7 +82,7 @@ export class Store {
         try {
           await tx.rollback();
         } catch {
-          /* Abstrakte Fehlermeldung folgt. */
+          /* A sanitized error follows. */
         }
         throw error;
       } finally {

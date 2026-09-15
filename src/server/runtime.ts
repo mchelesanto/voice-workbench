@@ -18,7 +18,7 @@ if (!processState.voiceWorkbenchResources) {
   processState.voiceWorkbenchResources = resources;
   process.once("exit", () => resources.db?.close());
 }
-// Ressourcen überleben HMR, Anwendungscode wird beim Modulwechsel neu geladen.
+// Resources survive HMR; application code is reloaded with each module update.
 const resources = processState.voiceWorkbenchResources;
 let handle: ReturnType<typeof createApi> | undefined;
 export function application() {

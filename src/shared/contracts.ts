@@ -17,7 +17,7 @@ export const LIMITS = {
 } as const;
 export const providerSchema = z.enum(["google", "mistral"]);
 export const modeSchema = z.enum(["verbatim", "smart"]);
-// Einmal unterstützte Einträge bleiben für gespeicherte und ausstehende Notizen erhalten.
+// Keep previously supported entries for saved and pending notes.
 export const MODEL_HISTORY = {
   google: [{ model: "gemini-3.5-transcribe", modes: ["verbatim", "smart"] }],
   mistral: [

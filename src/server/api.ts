@@ -206,7 +206,7 @@ export function createApi(deps: Dependencies) {
           ...(code ? { code } : {}),
         });
       } catch {
-        /* Diagnosefehler ändern keine bestätigten Writes. */
+        /* Diagnostic errors do not change confirmed writes. */
       }
     }
   };

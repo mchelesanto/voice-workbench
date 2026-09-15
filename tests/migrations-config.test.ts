@@ -18,8 +18,8 @@ afterEach(async () => {
   for (const dir of folders.splice(0))
     await rm(dir, { recursive: true, force: true });
 });
-describe("Projektkonfiguration", () => {
-  it("liest ausschließlich die eigene Datei und ersetzt geerbte fremde Werte", async () => {
+describe("Project configuration", () => {
+  it("reads only its own file and replaces inherited values", async () => {
     const dir = await folder();
     await writeFile(
       join(dir, ".env.local"),
@@ -41,7 +41,7 @@ describe("Projektkonfiguration", () => {
     expect(env).not.toHaveProperty("TURSO_API_KEY");
     expect(env).not.toHaveProperty("NEXT_PUBLIC_TOKEN");
   });
-  it("nennt bei kaputter Konfiguration keine Secretwerte", async () => {
+  it("does not expose secrets when configuration is invalid", async () => {
     const dir = await folder();
     await writeFile(
       join(dir, ".env.local"),
@@ -55,8 +55,8 @@ describe("Projektkonfiguration", () => {
     }
   });
 });
-describe("Versionierte Migrationen", () => {
-  it("ist wiederholbar und prüft den gespeicherten Checksum", async () => {
+describe("Versioned migrations", () => {
+  it("is repeatable and verifies stored checksums", async () => {
     const dir = await folder();
     const db = createClient({ url: ":memory:" });
     try {
@@ -70,12 +70,12 @@ describe("Versionierte Migrationen", () => {
         join(dir, "0001_initial.sql"),
         "CREATE TABLE changed(id TEXT);",
       );
-      await expect(migrate(db, dir)).rejects.toThrow("verändert");
+      await expect(migrate(db, dir)).rejects.toThrow("modified");
     } finally {
       db.close();
     }
   });
-  it("rollt eine teilweise fehlgeschlagene Migration vollständig zurück", async () => {
+  it("fully rolls back a partially failed migration", async () => {
     const dir = await folder();
     const db = createClient({ url: ":memory:" });
     try {

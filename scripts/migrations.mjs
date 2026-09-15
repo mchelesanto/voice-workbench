@@ -13,12 +13,12 @@ export async function migrate(client, directory) {
     .filter((name) => name.endsWith(".sql"))
     .sort();
   if (names.some((name) => !/^\d{4}_[a-z0-9_]+\.sql$/.test(name)))
-    throw new Error("Ungültiger Migrationsname.");
+    throw new Error("Invalid migration name.");
   const appliedNames = (
     await client.execute("SELECT name FROM schema_migrations")
   ).rows.map((row) => String(row.name));
   if (appliedNames.some((name) => !names.includes(name)))
-    throw new Error("Eine angewendete Migration fehlt im Projekt.");
+    throw new Error("An applied migration is missing from the project.");
   const applied = [];
   for (const name of names) {
     const sql = await readFile(join(directory, name), "utf8");
@@ -31,16 +31,14 @@ export async function migrate(client, directory) {
       });
       if (existing.rows.length) {
         if (existing.rows[0].checksum !== checksum)
-          throw new Error("Eine angewendete Migration wurde verändert.");
+          throw new Error("An applied migration was modified.");
       } else {
         const later = await tx.execute({
           sql: "SELECT name FROM schema_migrations WHERE name > ? LIMIT 1",
           args: [name],
         });
         if (later.rows.length)
-          throw new Error(
-            "Migrationen müssen in aufsteigender Reihenfolge ergänzt werden.",
-          );
+          throw new Error("Add migrations in ascending order.");
         await tx.executeMultiple(sql);
         await tx.execute({
           sql: "INSERT INTO schema_migrations VALUES (?,?,?)",
@@ -53,7 +51,7 @@ export async function migrate(client, directory) {
       try {
         await tx.rollback();
       } catch {
-        /* Die ursprüngliche Ursache bleibt erhalten. */
+        /* Preserve the original cause. */
       }
       throw error;
     } finally {

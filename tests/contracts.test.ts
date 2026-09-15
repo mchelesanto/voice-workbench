@@ -15,8 +15,8 @@ const note = {
   mode: "verbatim",
   durationMs: 1000,
 };
-describe("Validierungsvertrag", () => {
-  it("weist unbekannte Felder und widersprüchliche Modelle ab", () => {
+describe("Validation contract", () => {
+  it("rejects unknown fields and incompatible models", () => {
     expect(
       createNoteSchema.safeParse({ ...note, key: "ignored?" }).success,
     ).toBe(false);
@@ -32,7 +32,7 @@ describe("Validierungsvertrag", () => {
       }).success,
     ).toBe(false);
   });
-  it("erhält bewusst leere bearbeitete Texte, aber verlangt ein Original", () => {
+  it("preserves intentionally empty edits while requiring an original", () => {
     expect(createNoteSchema.safeParse({ ...note, body: "" }).success).toBe(
       true,
     );
@@ -43,7 +43,7 @@ describe("Validierungsvertrag", () => {
       createNoteSchema.safeParse({ ...note, title: "x".repeat(161) }).success,
     ).toBe(false);
   });
-  it("verlangt sichere positive Revisionen", () => {
+  it("requires safe positive revisions", () => {
     for (const revision of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, "1"]) {
       expect(
         editSchema.safeParse({
@@ -54,7 +54,7 @@ describe("Validierungsvertrag", () => {
       ).toBe(false);
     }
   });
-  it("normalisiert Fachbegriffe, ohne Mehrwortbegriffe zu verlieren", () => {
+  it("normalizes vocabulary without losing multiword terms", () => {
     expect(
       vocabularySchema.parse([" Café ", "Cafe\u0301", "Eigener Begriff"]),
     ).toEqual(["Café", "Eigener Begriff"]);
@@ -62,26 +62,26 @@ describe("Validierungsvertrag", () => {
       expect(vocabularySchema.safeParse(terms).success).toBe(false);
   });
 });
-describe("Begrenzte Audioerkennung", () => {
+describe("Bounded audio detection", () => {
   const wav = () => {
     const b = new Uint8Array(44);
     b.set(new TextEncoder().encode("RIFF"));
     b.set(new TextEncoder().encode("WAVE"), 8);
     return b;
   };
-  it("erkennt WAV unabhängig von MIME-Alias und Parametern", () => {
+  it("recognizes WAV across MIME aliases and parameters", () => {
     expect(validateAudio(wav(), "audio/x-wav; charset=binary")).toBe(
       "audio/wav",
     );
   });
-  it("verhindert den stillen SDK-Fallback und MIME-Widersprüche", () => {
+  it("prevents silent SDK fallback and MIME mismatches", () => {
     expect(() => validateAudio(new Uint8Array([1, 2, 3]), "audio/wav")).toThrow(
       ApiError,
     );
     expect(() => validateAudio(wav(), "audio/ogg")).toThrow(ApiError);
     expect(() => validateAudio(wav(), "text/plain")).toThrow(ApiError);
   });
-  it("erkennt unterstützte Browsercontainer", () => {
+  it("recognizes supported browser containers", () => {
     expect(
       validateAudio(
         new Uint8Array([0x1a, 0x45, 0xdf, 0xa3, 0, 0, 0, 0]),
@@ -98,14 +98,14 @@ describe("Begrenzte Audioerkennung", () => {
       ),
     ).toBe("audio/mp4");
   });
-  it("weist zu große ID3-Vorspänne ab", () => {
+  it("rejects oversized ID3 prefixes", () => {
     const bytes = new Uint8Array(10);
     bytes.set([73, 68, 51, 4, 0, 0, 0, 16, 0, 0]);
     expect(() => validateAudio(bytes, "audio/mpeg")).toThrow(ApiError);
   });
 });
 
-it("weist Containerkennungen ab, die das SDK nicht als gleichen MIME-Typ erkennt", () => {
+it("rejects container signatures with a different SDK MIME classification", () => {
   expect(() =>
     validateAudio(new Uint8Array([0xff, 0xe7, 0, 0]), "audio/mpeg"),
   ).toThrow(ApiError);

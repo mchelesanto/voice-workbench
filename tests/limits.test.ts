@@ -13,8 +13,8 @@ const config = {
   googleKey: "fixture",
   mistralKey: "fixture",
 };
-describe("Exakte Vertragsgrenzen", () => {
-  it("erhält Unicode auch auf einer Cursor-Folgeseite", async () => {
+describe("Exact contract boundaries", () => {
+  it("preserves Unicode on subsequent cursor pages", async () => {
     const db = createClient({ url: ":memory:" });
     try {
       await migrate(db, "db/migrations");
@@ -85,7 +85,7 @@ describe("Exakte Vertragsgrenzen", () => {
       ).rejects.toMatchObject({ code });
     },
   );
-  it("akzeptiert genau die erlaubte Chunkzahl", async () => {
+  it("accepts exactly the allowed chunk count", async () => {
     let n = 0;
     const stream = new ReadableStream<Uint8Array>({
       pull(controller) {
@@ -107,7 +107,7 @@ describe("Exakte Vertragsgrenzen", () => {
     );
     expect(data.byteLength).toBe(3);
   });
-  it("reicht 12000 UTF-16-Einheiten weiter und weist 12001 vor dem Modell ab", async () => {
+  it("accepts 12000 UTF-16 units and rejects 12001 before calling the model", async () => {
     const enhance = vi.fn().mockResolvedValue({
       text: "Vorschlag",
       provider: "mistral",
