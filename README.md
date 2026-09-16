@@ -24,7 +24,7 @@ For development, run `npm run dev`. The launcher binds only to `127.0.0.1:3210`.
 
 Create a dedicated Turso database and a token scoped to that database. The token needs data and schema permissions for migrations. Do not use a platform or group token in the application.
 
-Set `GOOGLE_GENERATIVE_AI_API_KEY` for Google transcription, `MISTRAL_API_KEY` for Mistral transcription and optional text refinement, or both. Unconfigured providers are shown as unavailable. Provider selection does not change the language you speak; the interface is English.
+Set `GOOGLE_GENERATIVE_AI_API_KEY` for Google transcription, `MISTRAL_API_KEY` for Mistral transcription, or both. Set `FIREWORKS_API_KEY` for optional refinement with GLM 5.3 Flash. Unconfigured providers are shown as unavailable. Provider selection does not change the language you speak; the interface is English.
 
 On another computer, use the same Turso connection in that computer's own `.env.local`. Do not create a second database if you want a shared library. Audio and unsynchronized drafts remain on their original device.
 
@@ -34,7 +34,7 @@ Credentials belong exclusively in the ignored `.env.local`. The launcher rejects
 
 - **Record:** Choose a provider and transcription mode, then start. Each recording becomes a new note. Recording stops at ten minutes or the byte limit.
 - **Write:** Edit the title and working text. The original transcript remains unchanged. Edits are saved locally before cloud writes.
-- **Refine:** Ask Mistral to clean up, structure, or translate your text into English. Compare the exact input with the suggestion, then explicitly apply it. Undo restores the previous working version within the current editor session. If you edit again, that previous version remains available to copy without overwriting the newer work. A changed source makes an older suggestion ineligible for application.
+- **Refine:** Ask GLM 5.3 Flash through Fireworks to clean up, structure, or translate your text into English. Compare the exact input with the suggestion, then explicitly apply it. Undo restores the previous working version within the current editor session. If you edit again, that previous version remains available to copy without overwriting the newer work. A changed source makes an older suggestion ineligible for application.
 - **Recover:** Open **Local audio & drafts** to recover completed recordings and pending drafts. Drafts from separate tabs are preserved independently and grouped by note. Unsaved text still held in the current tab appears here even if browser storage is unavailable; **Open draft** reopens that live version without waiting for the cloud. Copy or download in-memory-only text before closing or reloading. A confirmed restoration retires its exact source snapshot, preserving newer edits. A local-only save retry never starts a model request. If local storage rejects a finished transcript, it remains visible for copying or Markdown download.
 - **Resolve:** Concurrent edits show both versions. Choose explicitly; the application never silently overwrites another version.
 - **Use elsewhere:** Copy plain text or download a Markdown note. Listen to locally available audio, or download and delete it separately.
@@ -65,7 +65,7 @@ Both attempts of a data request share one 20-second client deadline. A retry doe
 
 ## Data and limits
 
-Transcription sends audio and vocabulary to your selected provider. Refinement sends text to Mistral. Notes and settings are stored in Turso. Audio and pending drafts remain in IndexedDB in the current browser profile. Clearing browser data removes this local recovery space. Download important audio for a separate backup.
+Transcription sends audio and vocabulary to your selected provider. Refinement sends text to Fireworks. Notes and settings are stored in Turso. Audio and pending drafts remain in IndexedDB in the current browser profile. Clearing browser data removes this local recovery space. Download important audio for a separate backup.
 
 Refinement can change meaning despite preservation instructions. Review names, order, conditions, and negations. Incomplete model responses are not offered for application. Refinement accepts up to 12,000 UTF-16 units; larger notes can still be saved and exported.
 

@@ -12,6 +12,7 @@ const config = {
   databaseToken: "fixture",
   googleKey: "fixture",
   mistralKey: "fixture",
+  fireworksKey: "fixture",
 };
 describe("Exact contract boundaries", () => {
   it("preserves Unicode on subsequent cursor pages", async () => {
@@ -110,8 +111,8 @@ describe("Exact contract boundaries", () => {
   it("accepts 12000 UTF-16 units and rejects 12001 before calling the model", async () => {
     const enhance = vi.fn().mockResolvedValue({
       text: "Vorschlag",
-      provider: "mistral",
-      model: "mistral-small-latest",
+      provider: "fireworks",
+      model: "accounts/fireworks/models/glm-5p3-flash",
       preset: "clean",
     });
     const api = createApi({

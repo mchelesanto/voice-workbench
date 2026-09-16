@@ -5,6 +5,7 @@ import { createClient } from "@libsql/client";
 import {
   loadProjectConfig,
   applicationEnvironment,
+  buildEnvironment,
 } from "../scripts/config.mjs";
 import { migrate } from "../scripts/migrations.mjs";
 const folders: string[] = [];
@@ -32,14 +33,37 @@ describe("Project configuration", () => {
       TURSO_AUTH_TOKEN: "different",
       TURSO_API_KEY: "platform",
       MISTRAL_API_KEY: "inherited",
+      FIREWORKS_API_KEY: "inherited-fireworks",
       NEXT_PUBLIC_TOKEN: "private",
       PATH: "keep-path",
     });
     expect(env.TURSO_AUTH_TOKEN).toBe("own-db-token");
     expect(env.MISTRAL_API_KEY).toBe("");
+    expect(env.FIREWORKS_API_KEY).toBe("");
     expect(env.PATH).toBe("keep-path");
     expect(env).not.toHaveProperty("TURSO_API_KEY");
     expect(env).not.toHaveProperty("NEXT_PUBLIC_TOKEN");
+  });
+  it("uses the project Fireworks key and blanks it during builds", async () => {
+    const dir = await folder();
+    await writeFile(
+      join(dir, ".env.local"),
+      'TURSO_DATABASE_URL="libsql://example.turso.io"\nTURSO_AUTH_TOKEN="fixture"\nAPP_ORIGIN="http://localhost:3210"\nFIREWORKS_API_KEY="own-fireworks"\n',
+    );
+    const config = loadProjectConfig(dir);
+    expect(config.fireworksKey).toBe("own-fireworks");
+    expect(
+      applicationEnvironment(config, {
+        NODE_ENV: "test",
+        FIREWORKS_API_KEY: "inherited",
+      }).FIREWORKS_API_KEY,
+    ).toBe("own-fireworks");
+    expect(
+      buildEnvironment(dir, {
+        NODE_ENV: "test",
+        FIREWORKS_API_KEY: "inherited",
+      }).FIREWORKS_API_KEY,
+    ).toBe("");
   });
   it("does not expose secrets when configuration is invalid", async () => {
     const dir = await folder();

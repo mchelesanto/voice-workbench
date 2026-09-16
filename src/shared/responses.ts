@@ -104,7 +104,7 @@ export const transcriptionResultSchema = z.strictObject({
 });
 export const enhancementResultSchema = z.strictObject({
   text: z.string().min(1).max(LIMITS.maxTextLength),
-  provider: z.literal("mistral"),
+  provider: z.literal("fireworks"),
   model: z.string().min(1).max(100),
   preset: z.enum(["clean", "bullets", "english"]),
 });

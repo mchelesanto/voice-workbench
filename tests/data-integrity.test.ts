@@ -19,6 +19,7 @@ const config = {
   databaseToken: "fixture",
   googleKey: "fixture",
   mistralKey: "fixture",
+  fireworksKey: "fixture",
 };
 describe("Data and configuration integrity", () => {
   it("returns 140 complete Unicode characters in previews", async () => {

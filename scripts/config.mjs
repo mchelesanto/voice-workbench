@@ -31,6 +31,7 @@ export const CONFIG_KEYS = [
   "TURSO_AUTH_TOKEN",
   "GOOGLE_GENERATIVE_AI_API_KEY",
   "MISTRAL_API_KEY",
+  "FIREWORKS_API_KEY",
   "APP_ORIGIN",
 ];
 /** @param {string} root @param {boolean} required */
@@ -91,6 +92,7 @@ export function loadProjectConfig(root) {
     databaseToken,
     googleKey: values.GOOGLE_GENERATIVE_AI_API_KEY?.trim() || "",
     mistralKey: values.MISTRAL_API_KEY?.trim() || "",
+    fireworksKey: values.FIREWORKS_API_KEY?.trim() || "",
   };
 }
 /** @param {ReturnType<typeof loadProjectConfig>} config @param {NodeJS.ProcessEnv} inherited */
@@ -102,6 +104,7 @@ export function applicationEnvironment(config, inherited) {
     TURSO_AUTH_TOKEN: config.databaseToken,
     GOOGLE_GENERATIVE_AI_API_KEY: config.googleKey,
     MISTRAL_API_KEY: config.mistralKey,
+    FIREWORKS_API_KEY: config.fireworksKey,
     APP_ORIGIN: config.origin,
   };
   delete env.TURSO_API_KEY;
@@ -121,6 +124,7 @@ export function buildEnvironment(root, inherited) {
       databaseToken: "",
       googleKey: "",
       mistralKey: "",
+      fireworksKey: "",
       origin: "http://localhost:3210",
     },
     inherited,

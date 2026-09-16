@@ -11,6 +11,7 @@ const config = {
   databaseToken: "private-db-value",
   googleKey: "private-google-value",
   mistralKey: "",
+  fireworksKey: "",
 };
 const model = { transcribe: vi.fn(), enhance: vi.fn() };
 let db: Client;
@@ -98,6 +99,31 @@ describe("Local API", () => {
     expect((await response.json()).error.code).toBe("invalid_input");
     expect(storeCalls).not.toHaveBeenCalled();
   });
+  it.each([
+    ["", "mistral-only", false],
+    ["fireworks-only", "", true],
+  ])(
+    "derives refinement availability only from Fireworks",
+    async (fireworksKey, mistralKey, expected) => {
+      const handler = createApi({
+        getConfig: () => ({
+          ...config,
+          fireworksKey: String(fireworksKey),
+          mistralKey: String(mistralKey),
+        }),
+        getStore: vi.fn(),
+        getModels: () => model,
+      });
+      const response = await handler(request("/config"));
+      const body = await response.json();
+      expect(body.enhancementAvailable).toBe(expected);
+      expect(
+        body.providers.find((p: { id: string }) => p.id === "mistral")
+          .available,
+      ).toBe(!!mistralKey);
+      expect(JSON.stringify(body)).not.toContain("-only");
+    },
+  );
   it("rejects unknown cursor fields before allocating storage", async () => {
     const cursor = Buffer.from(
       JSON.stringify({
@@ -284,8 +310,8 @@ describe("HTTP audio and resource handling", () => {
     expect(done.map((r) => r.status)).toEqual([500, 500]);
     model.enhance.mockResolvedValue({
       text: "Fertig",
-      provider: "mistral",
-      model: "mistral-small-latest",
+      provider: "fireworks",
+      model: "accounts/fireworks/models/glm-5p3-flash",
       preset: "clean",
     });
     expect(

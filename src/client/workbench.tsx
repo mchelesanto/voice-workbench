@@ -1539,7 +1539,7 @@ export function Workbench() {
               <h3>You have the final word.</h3>
               <p>
                 Transcription sends audio to Google or Mistral. Refining sends
-                text to Mistral and produces a suggestion. Always check names,
+                text to Fireworks and produces a suggestion. Always check names,
                 conditions, and negations.
               </p>
             </div>
@@ -2262,12 +2262,7 @@ function Editor({
           }}
           wide
         >
-          {!proposal && (
-            <p className="modal-intro">
-              Mistral suggests a change. Compare it with your words before
-              applying.
-            </p>
-          )}
+          <p className="modal-intro">GLM 5.3 Flash · Text sent to Fireworks.</p>
           <details
             className={`refinement-settings ${proposal ? "has-proposal" : ""}`}
             open={!proposal}
@@ -2316,7 +2311,7 @@ function Editor({
           )}
           {!config?.enhancementAvailable && (
             <p className="notice">
-              Set up Mistral in your local configuration to refine text.
+              Set up Fireworks in your local configuration to refine text.
             </p>
           )}
           {error && (
@@ -2411,7 +2406,6 @@ function Editor({
               </>
             ) : (
               <>
-                <span className="modal-footnote">Text is sent to Mistral.</span>
                 <button
                   className="primary"
                   onClick={() => void enhance()}

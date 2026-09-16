@@ -31,6 +31,7 @@ it("aborts a real loopback HTTP response while LibSQL is reading its stalled bod
       databaseToken: "synthetic-fixture",
       googleKey: "",
       mistralKey: "",
+      fireworksKey: "",
     };
     const controller = new AbortController();
     const work = withStorageOperation(

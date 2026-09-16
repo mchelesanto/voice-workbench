@@ -19,6 +19,7 @@ const config = {
   databaseToken: "fixture",
   googleKey: "fixture",
   mistralKey: "fixture",
+  fireworksKey: "fixture",
 };
 const input = {
   provider: "google" as const,

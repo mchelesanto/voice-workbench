@@ -42,7 +42,7 @@ export const PROVIDERS = {
 export const MODELS = {
   google: PROVIDERS.google.model,
   mistral: PROVIDERS.mistral.model,
-  enhancement: "mistral-small-latest",
+  enhancement: "accounts/fireworks/models/glm-5p3-flash",
 } as const;
 export function supportsMode(
   provider: z.infer<typeof providerSchema>,
@@ -154,7 +154,7 @@ export type Transcription = {
 };
 export type EnhancedText = {
   text: string;
-  provider: "mistral";
+  provider: "fireworks";
   model: string;
   preset: Enhancement["preset"];
 };

@@ -2,7 +2,8 @@ import "server-only";
 import { z } from "zod";
 import { createGoogle } from "@ai-sdk/google";
 import { createMistral } from "@ai-sdk/mistral";
-import { transcribe, generateText } from "ai";
+import { transcribe } from "ai";
+import { fireworksText, type TextRequest } from "./fireworks";
 import type { RuntimeConfig } from "./config";
 import { ApiError, type ErrorCode } from "./errors";
 import { untilAborted, type ModelLease } from "./model-slots";
@@ -33,9 +34,7 @@ export type Transport = {
   transcribe: (
     input: Parameters<typeof transcribe>[0],
   ) => Promise<{ text: string; warnings?: unknown[] }>;
-  generateText: (
-    input: Parameters<typeof generateText>[0],
-  ) => Promise<{ text: string; finishReason: string; warnings?: unknown[] }>;
+  generateText: (input: TextRequest) => Promise<{ text: string }>;
 };
 const outputSchema = z.string().max(LIMITS.maxTextLength);
 function validText(text: string, empty: ErrorCode): string {
@@ -105,7 +104,10 @@ const PRESETS = {
 
 export function createModels(
   config: RuntimeConfig,
-  transport: Transport = { transcribe, generateText },
+  transport: Transport = {
+    transcribe,
+    generateText: (input) => fireworksText(config.fireworksKey, input),
+  },
 ): Models {
   globalThis.AI_SDK_LOG_WARNINGS = false;
   const google = config.googleKey
@@ -156,28 +158,23 @@ export function createModels(
       };
     },
     async enhance(input, signal, lease) {
-      if (!mistral) throw new ApiError("provider_unavailable");
+      if (!config.fireworksKey) throw new ApiError("provider_unavailable");
       if (input.text.length > LIMITS.maxEnhanceLength)
         throw new ApiError("enhancement_input_too_long");
       const result = await callProvider(
         (abortSignal) =>
           transport.generateText({
-            model: mistral(MODELS.enhancement),
             system: CLEANUP + " " + PRESETS[input.preset],
             prompt: input.text,
-            maxOutputTokens: LIMITS.maxOutputTokens,
-            maxRetries: 0,
             abortSignal,
           }),
         signal,
         lease,
         "enhancement_failed",
       );
-      if (result.finishReason !== "stop")
-        throw new ApiError("enhancement_incomplete");
       return {
         text: validText(result.text, "enhancement_failed"),
-        provider: "mistral",
+        provider: "fireworks",
         model: MODELS.enhancement,
         preset: input.preset,
       };

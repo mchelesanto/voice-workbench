@@ -17,6 +17,7 @@ const config = {
   databaseToken: "fixture",
   googleKey: "",
   mistralKey: "",
+  fireworksKey: "",
 };
 afterEach(() => {
   vi.useRealTimers();

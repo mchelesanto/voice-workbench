@@ -7,6 +7,7 @@ const config = {
   databaseToken: "test-only",
   googleKey: "test-google",
   mistralKey: "test-mistral",
+  fireworksKey: "test-mistral",
 };
 const input = {
   audio: new Uint8Array(44),
@@ -97,7 +98,7 @@ describe("Provider contract", () => {
     ).rejects.toMatchObject({ code: "request_aborted" });
     expect(transcribe).not.toHaveBeenCalled();
   });
-  it("offers only complete suggestions and preserves text as input", async () => {
+  it("validates refined text and preserves the exact source as input", async () => {
     const generateText = vi
       .fn()
       .mockResolvedValue({ text: "Vollständig", finishReason: "stop" });
@@ -108,24 +109,16 @@ describe("Provider contract", () => {
     ).toBe("Vollständig");
     expect(generateText.mock.calls[0][0]).toMatchObject({
       prompt: source,
-      maxRetries: 0,
-      maxOutputTokens: 8192,
     });
     expect(generateText.mock.calls[0][0]).not.toHaveProperty("tools");
-    for (const finishReason of [
-      "length",
-      "other",
-      "tool-calls",
-      "content-filter",
-      "error",
+    for (const [text, code] of [
+      ["   ", "enhancement_failed"],
+      ["x".repeat(LIMITS.maxTextLength + 1), "output_too_large"],
     ]) {
-      generateText.mockResolvedValue({
-        text: "Abgeschnittener Text",
-        finishReason,
-      });
+      generateText.mockResolvedValue({ text });
       await expect(
         service.enhance({ text: source, preset: "clean" }, signal()),
-      ).rejects.toMatchObject({ code: "enhancement_incomplete" });
+      ).rejects.toMatchObject({ code });
     }
   });
 });

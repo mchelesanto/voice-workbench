@@ -8,7 +8,7 @@ Die Anwendung soll auf mehreren Rechnern lokal nutzbar sein und Notizen gemeinsa
 
 ## Entscheidung
 
-Next.js mit Node-Routen, Google/Mistral über AI SDK, Turso mit serverseitigem @libsql/client. Neue Datenbank und auf sie begrenzter Token. SQL-Migrationen statt ORM. Notizen mit unveränderlichem Transkript, bearbeitbarer Fassung und optimistischer Revision. IndexedDB als lokales Wiederherstellungsfach für Audio und noch nicht synchronisierte Entwürfe. Kein Plattformschlüssel im Produkt.
+Next.js mit Node-Routen, Google/Mistral für Transkription über AI SDK, Textverbesserung über Fireworks (ADR 0002), Turso mit serverseitigem @libsql/client. Neue Datenbank und auf sie begrenzter Token. SQL-Migrationen statt ORM. Notizen mit unveränderlichem Transkript, bearbeitbarer Fassung und optimistischer Revision. IndexedDB als lokales Wiederherstellungsfach für Audio und noch nicht synchronisierte Entwürfe. Kein Plattformschlüssel im Produkt.
 
 ## Alternativen und Kosten
 

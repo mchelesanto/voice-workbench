@@ -38,6 +38,7 @@ it("replays a timed-out committed write through a fresh client after closing the
         databaseToken: "fixture",
         googleKey: "",
         mistralKey: "",
+        fireworksKey: "",
       }),
       getModels: vi.fn(),
       getStore: () => {

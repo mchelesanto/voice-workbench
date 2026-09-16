@@ -102,7 +102,7 @@ export function createApi(deps: Dependencies) {
               vocabulary: definition.vocabulary,
             };
           }),
-          enhancementAvailable: !!config.mistralKey,
+          enhancementAvailable: !!config.fireworksKey,
           limits: {
             maxAudioBytes: LIMITS.maxAudioBytes,
             maxRecordingSeconds: LIMITS.maxRecordingSeconds,
