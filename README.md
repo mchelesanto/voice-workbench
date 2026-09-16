@@ -49,6 +49,8 @@ Recovery identifies the provider and mode stored with each recording. Changing t
 
 The recovery space includes recordings and completed transcripts held only in the current tab. Saving on this device is confirmed only after the local transaction completes. Cancel is available during transcription; saving the resulting transcript is a separate, non-cancelable step. Concurrent tabs claim recording attempts atomically, so an older result cannot overwrite a newer attempt or its cloud confirmation.
 
+Playback first resolves the complete audio duration. Browser recordings without duration metadata are scanned locally while paused, then returned to the beginning before controls appear. The recording card uses that media duration once available; the stored capture timer remains unchanged. Refreshing the library keeps the same recording at its current position. If preparation or playback fails, download the audio to use another player. Existing recordings are supported without rewriting their files.
+
 ## Checks
 
 - `npm test`: deterministic tests without live provider or cloud calls.

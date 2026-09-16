@@ -79,6 +79,7 @@ import {
 } from "./local-store";
 import { download, duration, exportNote } from "./export";
 import { useRecorder } from "./use-recorder";
+import { prepareAudioPlayback, playbackSourceKey } from "./audio-playback";
 import {
   recordingConfirmation,
   recordingRecovery,
@@ -183,31 +184,83 @@ function Modal({
     </dialog>
   );
 }
-function AudioPlayer({ blob }: { blob: Blob }) {
+type PlaybackDuration = { sourceKey: string; durationMs: number };
+function AudioPlayer({
+  blob,
+  sourceKey,
+  onDuration,
+}: {
+  blob: Blob;
+  sourceKey: string;
+  onDuration: (result: PlaybackDuration) => void;
+}) {
   const ref = useRef<HTMLAudioElement>(null);
+  const [sourceBlob] = useState(blob);
+  const [status, setStatus] = useState<"preparing" | "ready" | "error">(
+    "preparing",
+  );
   useEffect(() => {
     const element = ref.current;
-    const url = URL.createObjectURL(blob);
-    if (element) element.src = url;
-    return () => {
-      if (element) {
-        element.pause();
-        element.removeAttribute("src");
-        element.load();
-      }
+    if (!element) return;
+    const controller = new AbortController();
+    const url = URL.createObjectURL(sourceBlob);
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      element.removeEventListener("error", fail);
+      element.pause();
+      element.removeAttribute("src");
+      element.load();
       URL.revokeObjectURL(url);
     };
-  }, [blob]);
+    const fail = () => {
+      if (controller.signal.aborted) return;
+      setStatus("error");
+      controller.abort();
+      release();
+    };
+    element.addEventListener("error", fail);
+    element.src = url;
+    void prepareAudioPlayback(element, controller.signal)
+      .then((seconds) => {
+        if (controller.signal.aborted) return;
+        if (element.error) return fail();
+        onDuration({ sourceKey, durationMs: seconds * 1000 });
+        setStatus("ready");
+      })
+      .catch(fail);
+    return () => {
+      controller.abort();
+      release();
+    };
+  }, [sourceBlob, sourceKey, onDuration]);
   return (
-    <audio
-      ref={ref}
-      controls
-      preload="metadata"
-      aria-label="Play this local recording"
-    />
+    <>
+      <audio
+        ref={ref}
+        controls={status === "ready"}
+        style={status === "ready" ? undefined : { display: "none" }}
+        preload="auto"
+        aria-label="Play this local recording"
+      />
+      {status === "preparing" && (
+        <p className="field-hint" role="status">
+          Preparing playback…
+        </p>
+      )}
+      {status === "error" && (
+        <p className="notice" role="status">
+          This recording could not be played here. Download the audio to try
+          another player.
+        </p>
+      )}
+    </>
   );
 }
 export function Workbench() {
+  const [playbackDuration, setPlaybackDuration] =
+    useState<PlaybackDuration | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [page, setPage] = useState<NotePage>(emptyPage);
@@ -1253,8 +1306,13 @@ export function Workbench() {
                     {visibleRecording.result?.title || "Recorded thought"}
                   </strong>
                   <small>
-                    {duration(visibleRecording.durationMs)} · Recorded with{" "}
-                    {recordingProvider(visibleRecording)} ·{" "}
+                    {duration(
+                      playbackDuration?.sourceKey ===
+                        playbackSourceKey(visibleRecording)
+                        ? playbackDuration.durationMs
+                        : visibleRecording.durationMs,
+                    )}{" "}
+                    · Recorded with {recordingProvider(visibleRecording)} ·{" "}
                     {visibleRecordingDurable
                       ? "Audio saved in this browser"
                       : visibleRecording.superseded
@@ -1287,7 +1345,12 @@ export function Workbench() {
               )}
               <details className="audio-details">
                 <summary>Listen to recording</summary>
-                <AudioPlayer blob={visibleRecording.blob} />
+                <AudioPlayer
+                  key={playbackSourceKey(visibleRecording)}
+                  blob={visibleRecording.blob}
+                  sourceKey={playbackSourceKey(visibleRecording)}
+                  onDuration={setPlaybackDuration}
+                />
               </details>
               {visibleRecording.result && !active && (
                 <div className="rescued-text">
