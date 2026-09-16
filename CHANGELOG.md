@@ -30,6 +30,10 @@
 
 ### Fixed
 
+- Open recovered drafts even when their new local copy cannot be saved, and keep existing cloud notes accessible after an identifier conflict.
+- Validate launcher exit codes on Windows without assuming POSIX signal delivery.
+- Keep recovery actions beside their own warnings, show both conflict previews with explicit replacement choices, and announce local failures accessibly.
+
 - Keep live unsaved drafts accessible when browser storage and cloud reads fail.
 - Preserve deletion, conflict, and cloud-confirmed states through local persistence failures.
 - Retry local recovery work without repeating confirmed cloud writes, and resume autosave for newly entered text.

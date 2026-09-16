@@ -29,8 +29,9 @@ afterEach(async () => {
     await rm(dir, { recursive: true, force: true });
 });
 describe("Real process boundaries", () => {
-  it.each(["SIGINT", "SIGTERM"] as const)(
-    "ordnet ein weitergereichtes %s als kontrollierten Stopp ein",
+  // Windows child.kill terminates a process; it does not deliver POSIX signals.
+  it.skipIf(process.platform === "win32").each(["SIGINT", "SIGTERM"] as const)(
+    "treats a forwarded %s as a controlled stop on POSIX",
     async (signal) => {
       const root = await fixture();
       const result = await new Promise<number | null>(
@@ -58,6 +59,30 @@ describe("Real process boundaries", () => {
         },
       );
       expect(result).toBe(0);
+    },
+  );
+  it.each([0, 7])(
+    "propagates child exit code %s on every platform",
+    async (code) => {
+      const root = await fixture();
+      await writeFile(
+        join(root, "node_modules/next/dist/bin/next"),
+        `process.exit(${code});`,
+      );
+      const actual = await new Promise<number | null>(
+        (resolveResult, reject) => {
+          const child = spawn(
+            process.execPath,
+            [join(root, "scripts/serve.mjs"), "start"],
+            {
+              stdio: "ignore",
+            },
+          );
+          child.once("error", reject);
+          child.once("exit", resolveResult);
+        },
+      );
+      expect(actual).toBe(code);
     },
   );
   it("keeps credentials out of builds after real Next environment resolution", async () => {

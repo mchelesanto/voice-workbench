@@ -232,6 +232,44 @@ it("keeps newer edits and a cloud failure separate from local retry", async () =
   session.dispose();
 });
 
+it("does not attach an obsolete local failure to a newer queued snapshot", async () => {
+  const { session, ports } = setup();
+  const pending: Array<{ resolve: () => void; reject: (e: Error) => void }> =
+    [];
+  ports.persist = vi.fn(
+    () =>
+      new Promise<void>((resolve, reject) => pending.push({ resolve, reject })),
+  );
+  const old = session.secure().catch(() => {});
+  await vi.waitFor(() => expect(pending).toHaveLength(1));
+  session.revalidate({ ...note, body: "New remote content", revision: 2 });
+  pending[0].reject(new Error("Old write failed"));
+  await old;
+  expect(session.snapshot().localIssue).toBeUndefined();
+  await vi.waitFor(() => expect(pending).toHaveLength(2));
+  pending[1].resolve();
+  await vi.waitFor(() => expect(session.snapshot().durable).toBe(true));
+  session.dispose();
+});
+
+it("restores cloud-confirmed drafts with local warnings without another cloud write", async () => {
+  const { session: initial, ports } = setup();
+  const restored = EditorSession.restore(
+    {
+      ...initial.snapshot(),
+      localIssue: { kind: "persist", message: "Local write failed" },
+    },
+    ports,
+  );
+  expect(restored.snapshot().status).toBe("saved");
+  await restored.retryLocal();
+  await restored.save();
+  expect(ports.write).not.toHaveBeenCalled();
+  expect(restored.snapshot().durable).toBe(true);
+  restored.dispose();
+  initial.dispose();
+});
+
 it("normalizes a legacy local_error draft without discarding its text", () => {
   const { session: initial, ports } = setup();
   const session = new EditorSession(

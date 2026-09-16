@@ -208,6 +208,7 @@ export function Workbench() {
   >(null);
   const [local, setLocal] = useState<LocalRecord[]>([]);
   const [localError, setLocalError] = useState("");
+  const [localUnavailable, setLocalUnavailable] = useState(false);
   const [recording, setRecording] = useState<Recording | null>(null);
   const [recordingDurable, setRecordingDurable] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -238,6 +239,7 @@ export function Workbench() {
   const refreshLocal = useCallback(async () => {
     try {
       const result = await listLocal();
+      setLocalUnavailable(false);
       setLocal(result.records);
       setLocalError(
         result.invalid
@@ -245,6 +247,7 @@ export function Workbench() {
           : "",
       );
     } catch {
+      setLocalUnavailable(true);
       setLocalError(
         "Local storage is unavailable. Copy or download unsaved text and recordings before leaving.",
       );
@@ -538,7 +541,9 @@ export function Workbench() {
     if (locked) return;
     const existing = [...sessions.current.values()]
       .reverse()
-      .find((s) => s.snapshot().noteId === id);
+      .find(
+        (s) => s.snapshot().noteId === id && s.snapshot().status !== "deleted",
+      );
     if (existing) activate(existing);
     const ticket = ++openTicket.current;
     setOpening(!existing);
@@ -569,22 +574,19 @@ export function Workbench() {
       activate(live);
       return;
     }
-    const ticket = ++openTicket.current;
+    const session = EditorSession.restore(draft, ports());
+    activate(session);
+    const ticket = openTicket.current;
     try {
-      const session = EditorSession.restore(draft, ports());
       await session.secure();
-      if (ticket !== openTicket.current) {
-        session.dispose();
-        void refreshLocal();
-        return;
-      }
-      activate(session);
+      if (ticket !== openTicket.current) return;
       if (session.snapshot().status === "saved") await session.retryLocal();
       else if (draft.status !== "conflict" && draft.status !== "deleted")
         await session.save();
-      setToast("Draft restored as a separate version.");
-    } catch (e) {
-      setError(message(e));
+      if (ticket === openTicket.current)
+        setToast("Draft restored as a separate version.");
+    } catch {
+      // The active draft carries its local warning and recovery actions.
     }
   }
   async function removeRecord(item: LocalRecord) {
@@ -882,7 +884,9 @@ export function Workbench() {
     </>
   );
   return (
-    <div className={`app-shell ${active ? "has-note" : ""}`}>
+    <div
+      className={`app-shell ${active ? "has-note" : ""} ${active && (active.snapshot().localIssue || ["conflict", "deleted", "error"].includes(active.snapshot().status)) ? "has-recovery" : ""} ${active?.snapshot().status === "conflict" ? "has-conflict" : ""}`}
+    >
       <a className="skip-link" href="#main">
         Skip to workspace
       </a>
@@ -1351,14 +1355,16 @@ export function Workbench() {
             Audio recordings and unfinished drafts stored in this browser. They
             are not synced to your other computers.
           </p>
-          {localError && <p className="notice">{localError}</p>}
-          {records.some(
-            (item) =>
-              item.kind === "draft" && !item.durable && item.status !== "saved",
-          ) && (
+          {(localError ||
+            records.some(
+              (item) =>
+                item.kind === "draft" &&
+                !item.durable &&
+                item.status !== "saved",
+            )) && (
             <p className="notice">
-              Some changes are only in this tab. Copy or download them before
-              reloading or closing it.
+              {localError ||
+                "Some changes are only in this tab. Copy or download them before reloading or closing it."}
             </p>
           )}
           {!records.some(
@@ -1438,7 +1444,7 @@ export function Workbench() {
                           : "Open"}
                       </button>
                       <button
-                        className="icon-button"
+                        className="text-button"
                         aria-label="Download local content"
                         onClick={() =>
                           item.kind === "recording"
@@ -1446,7 +1452,7 @@ export function Workbench() {
                             : exportNote(item.input, item.updatedAt)
                         }
                       >
-                        <ArrowDownToLine size={16} />
+                        <ArrowDownToLine size={16} /> Download
                       </button>
                       <button
                         className="icon-button"
@@ -1464,6 +1470,7 @@ export function Workbench() {
           </div>
           <button
             className="secondary"
+            disabled={localUnavailable}
             onClick={async () => {
               try {
                 const granted = await navigator.storage?.persist?.();
@@ -1533,6 +1540,42 @@ function Editor({
   const tooLong =
     draft.input.body.length > (config?.limits.maxEnhanceLength ?? 12000);
   const readOnly = locked || ["deleting", "deleted"].includes(draft.status);
+  const needsRecovery =
+    !!draft.localIssue ||
+    ["conflict", "deleted", "error"].includes(draft.status);
+  const localRetryAction =
+    draft.localIssue?.kind !== "discard" && draft.localIssue ? (
+      <button
+        className={
+          ["local", "error"].includes(draft.status) ? "primary" : "text-button"
+        }
+        disabled={
+          localRetrying ||
+          locked ||
+          ["deleting", "saving"].includes(draft.status)
+        }
+        onClick={async () => {
+          setLocalRetrying(true);
+          try {
+            if (["local", "error"].includes(session.snapshot().status))
+              await session.save();
+            else await session.retryLocal();
+          } finally {
+            setLocalRetrying(false);
+          }
+        }}
+      >
+        {localRetrying
+          ? "Retrying"
+          : ["local", "error"].includes(draft.status)
+            ? "Try saving again"
+            : draft.status === "deleted"
+              ? "Save a device copy"
+              : draft.localIssue.kind === "cleanup"
+                ? "Retry local cleanup"
+                : "Retry local copy"}
+      </button>
+    ) : null;
   function closeActions(button: HTMLElement) {
     const menu = button.closest("details");
     if (menu) {
@@ -1682,7 +1725,7 @@ function Editor({
           </button>
           <span className="toolbar-separator" />
           <button
-            className="primary copy-action"
+            className={`${needsRecovery ? "secondary" : "primary"} copy-action`}
             aria-label="Copy text"
             onClick={() => void copy(draft.input.body)}
             disabled={!draft.input.body}
@@ -1738,102 +1781,129 @@ function Editor({
       {draft.status === "conflict" && draft.current && (
         <section className="conflict-panel" aria-label="Resolve conflict">
           <div>
-            <span className="eyebrow">BOTH VERSIONS ARE SAFE</span>
+            <span className="eyebrow">
+              {draft.durable ? "TWO VERSIONS TO REVIEW" : "KEEP THIS TAB OPEN"}
+            </span>
             <h3>This note was edited elsewhere.</h3>
             <p>
-              This note was also edited in another tab or on another device.
-              Your text stays in the editor. Choose which version to save.
+              The cloud has a different version. Compare both before choosing.
+              Your text remains in the editor below.
             </p>
           </div>
+          <div className="conflict-comparison">
+            <div>
+              <strong>
+                Your version · {draft.durable ? "this device" : "this tab only"}
+              </strong>
+              <small>{localDate(draft.updatedAt)}</small>
+              <pre>
+                {[...draft.input.body].slice(0, 180).join("")}
+                {[...draft.input.body].length > 180 ? "…" : ""}
+              </pre>
+            </div>
+            <div>
+              <strong>Cloud version</strong>
+              <small>{localDate(draft.current.updatedAt)}</small>
+              <pre>
+                {[...draft.current.body].slice(0, 180).join("")}
+                {[...draft.current.body].length > 180 ? "…" : ""}
+              </pre>
+            </div>
+          </div>
           <details>
-            <summary>View the library version</summary>
-            <strong>{draft.current.title}</strong>
+            <summary>Read both full versions</summary>
+            <strong>Your version</strong>
+            <pre>{draft.input.body}</pre>
+            <button
+              className="text-button"
+              onClick={() => void copy(draft.input.body)}
+            >
+              Copy my version
+            </button>
+            <strong>Cloud version · {draft.current.title}</strong>
             <pre>{draft.current.body}</pre>
             <button
               className="text-button"
               onClick={() => void copy(draft.current!.body)}
             >
-              Copy library version
+              Copy cloud version
             </button>
           </details>
           <div className="button-row">
             <button
               className="secondary"
-              onClick={() => session.resolve("local")}
-            >
-              Save my version
-            </button>
-            <button
-              className="text-button"
               onClick={() => {
                 if (
                   window.confirm(
-                    "Replace this editor with the library version? Download your local version first if you want to keep it too.",
+                    "Replace the cloud text with your version? Copy the cloud version first if you want to keep both.",
+                  )
+                )
+                  session.resolve("local");
+              }}
+            >
+              Replace cloud with my version
+            </button>
+            <button
+              className="secondary"
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "Replace this editor with the cloud version? Copy or download your version first if you want to keep both.",
                   )
                 )
                   session.resolve("remote");
               }}
             >
-              Use library version
+              Keep cloud version
             </button>
           </div>
+          {draft.localIssue && (
+            <div className="local-warning-detail" role="alert">
+              <p>{draft.localIssue.message}</p>
+              {localRetryAction}
+            </div>
+          )}
         </section>
       )}
-      {draft.localIssue && (
+      {draft.status !== "conflict" && (draft.localIssue || draft.error) && (
         <div className="notice local-warning" role="alert">
           <span>
-            {draft.status === "saved" && draft.localIssue.kind === "persist"
-              ? "Saved to cloud. The local recovery copy could not be updated."
-              : draft.localIssue.message}
+            {draft.status === "deleted" || draft.status === "error"
+              ? draft.error
+              : draft.localIssue
+                ? draft.status === "saved"
+                  ? "Saved to cloud. Recovery on this device needs attention."
+                  : draft.localIssue.message
+                : draft.error}
+            {["deleted", "error"].includes(draft.status) &&
+              draft.localIssue && (
+                <small className="local-warning-detail">
+                  {draft.localIssue.message}
+                </small>
+              )}
           </span>
-          {draft.localIssue.kind !== "discard" && (
-            <button
-              className="text-button"
-              disabled={
-                localRetrying ||
-                locked ||
-                draft.status === "deleting" ||
-                draft.status === "saving"
-              }
-              onClick={async () => {
-                setLocalRetrying(true);
-                try {
-                  if (["local", "error"].includes(session.snapshot().status))
-                    await session.save();
-                  else await session.retryLocal();
-                } finally {
-                  setLocalRetrying(false);
-                }
-              }}
-            >
-              {localRetrying
-                ? "Retrying"
-                : ["local", "error"].includes(draft.status)
-                  ? "Try saving again"
-                  : draft.localIssue.kind === "cleanup"
-                    ? "Retry local cleanup"
-                    : "Retry local copy"}
-            </button>
-          )}
+          <div className="recovery-actions">
+            {draft.status === "error" && !draft.localIssue && (
+              <button className="primary" onClick={() => void session.save()}>
+                Try saving again
+              </button>
+            )}
+            {draft.status === "deleted" && (
+              <button
+                className="primary"
+                onClick={() => onDuplicate(draft.input)}
+              >
+                Save as a new note
+              </button>
+            )}
+            {localRetryAction}
+          </div>
         </div>
       )}
-      {(draft.error || error) && (
-        <div className="notice" role="alert">
-          <span>{error || draft.error}</span>
-          {draft.status === "error" && !draft.localIssue && (
-            <button className="text-button" onClick={() => void session.save()}>
-              Try saving again
-            </button>
-          )}
-          {draft.status === "deleted" && (
-            <button
-              className="text-button"
-              onClick={() => onDuplicate(draft.input)}
-            >
-              Save as a new note
-            </button>
-          )}
-        </div>
+      {error && (
+        <p className="notice" role="alert">
+          {error}
+        </p>
       )}
       <label className="sr-only" htmlFor="note-body">
         Your editable version
@@ -1856,11 +1926,29 @@ function Editor({
           characters
         </span>
         <span>
-          {draft.status === "saved"
-            ? "Changes sync automatically"
-            : draft.status === "conflict"
-              ? "Choose a version to resume syncing"
-              : "Your local version is kept while syncing"}
+          {draft.status === "saved" ? (
+            "Changes sync automatically"
+          ) : draft.status === "conflict" ? (
+            "Choose a version to resume syncing"
+          ) : draft.durable ? (
+            "Recovery copy saved on this device"
+          ) : (
+            <>
+              Only in this tab. Keep it open or{" "}
+              <button
+                className="text-button"
+                onClick={() =>
+                  exportNote(
+                    draft.input,
+                    draft.current?.createdAt ?? draft.updatedAt,
+                  )
+                }
+              >
+                download a copy
+              </button>
+              .
+            </>
+          )}
         </span>
       </div>
       {draft.refinement && (

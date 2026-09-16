@@ -51,6 +51,8 @@ The library filter searches titles and the first 140 characters of each loaded n
 - `npm run format:check`: formatting checks.
 - `npm run build`: production build without credentials.
 
+On Windows, process-exit checks run normally; the two POSIX signal-forwarding tests run only on Unix systems because Windows forcibly terminates processes sent a signal through `child.kill()`.
+
 `npm run format` formats source, scripts, tests, and configuration. SQL migrations are immutable once applied. Add a new migration for schema changes. LF line endings keep migration checksums stable across operating systems.
 
 ## Data and limits
