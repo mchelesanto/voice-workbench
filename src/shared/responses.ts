@@ -39,6 +39,7 @@ export const errorCodeSchema = z.enum([
   "enhancement_input_too_long",
   "output_too_large",
   "storage_unavailable",
+  "storage_timeout",
   "schema_unavailable",
   "configuration_unavailable",
   "note_not_found",
@@ -178,14 +179,18 @@ export function retryDecision(input: {
       "note_not_found",
       "request_aborted",
       "request_timeout",
+      "storage_timeout",
     ].includes(input.code)
   )
     return "manual";
+  if (input.status === 408 || input.status === 504) return "manual";
   if (
     input.attempt === 0 &&
     (input.networkFailure ||
       input.code === "storage_unavailable" ||
-      input.status === 500)
+      (input.status !== undefined &&
+        input.status >= 500 &&
+        input.status <= 599))
   )
     return "once_same_payload";
   return "manual";

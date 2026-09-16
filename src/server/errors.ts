@@ -17,7 +17,10 @@ const definitions = {
     "The recording exceeds 25 MiB. It remains available on this device.",
   ],
   request_timeout: [408, "The upload did not finish in time."],
-  request_aborted: [408, "The upload was canceled."],
+  request_aborted: [
+    408,
+    "The request was canceled. Its outcome may be unknown.",
+  ],
   unsupported_audio: [
     415,
     "The audio format was not recognized or does not match the file.",
@@ -61,6 +64,10 @@ const definitions = {
   storage_unavailable: [
     503,
     "The database is unavailable. Your local draft is still available.",
+  ],
+  storage_timeout: [
+    504,
+    "The database operation timed out. A write may already have completed. Check the cloud state before retrying manually.",
   ],
   schema_unavailable: [
     503,

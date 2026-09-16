@@ -92,6 +92,49 @@ describe("Local API", () => {
         .available,
     ).toBe(false);
   });
+  it("rejects malformed list cursors before allocating storage resources", async () => {
+    const response = await api(request("/notes?cursor=invalid"));
+    expect(response.status).toBe(400);
+    expect((await response.json()).error.code).toBe("invalid_input");
+    expect(storeCalls).not.toHaveBeenCalled();
+  });
+  it("rejects unknown cursor fields before allocating storage", async () => {
+    const cursor = Buffer.from(
+      JSON.stringify({
+        v: 1,
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        id: "11111111-1111-4111-8111-111111111111",
+        extra: true,
+      }),
+    ).toString("base64url");
+    const response = await api(request("/notes?cursor=" + cursor));
+    expect(response.status).toBe(400);
+    expect((await response.json()).error.code).toBe("invalid_input");
+    expect(storeCalls).not.toHaveBeenCalled();
+  });
+  it("rejects non-canonical base64url while accepting the same canonical cursor bytes", async () => {
+    const canonical = Buffer.from(
+      JSON.stringify({
+        v: 1,
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        id: "11111111-1111-4111-8111-111111111111",
+      }) + " ",
+    ).toString("base64url");
+    const alphabet =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    const nonCanonical =
+      canonical.slice(0, -1) +
+      alphabet[alphabet.indexOf(canonical.at(-1)!) ^ 1];
+    expect(Buffer.from(nonCanonical, "base64url")).toEqual(
+      Buffer.from(canonical, "base64url"),
+    );
+    expect((await api(request("/notes?cursor=" + canonical))).status).toBe(200);
+    storeCalls.mockClear();
+    const response = await api(request("/notes?cursor=" + nonCanonical));
+    expect(response.status).toBe(400);
+    expect((await response.json()).error.code).toBe("invalid_input");
+    expect(storeCalls).not.toHaveBeenCalled();
+  });
   it("uses consistent routing, method, type, and field errors", async () => {
     for (const [r, status, code] of [
       [request("/missing"), 404, "api_not_found"],

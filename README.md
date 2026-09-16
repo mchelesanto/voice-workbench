@@ -57,6 +57,8 @@ On Windows, process-exit checks run normally; the two POSIX signal-forwarding te
 
 `npm run format` formats source, scripts, tests, and configuration. SQL migrations are immutable once applied. Add a new migration for schema changes. LF line endings keep migration checksums stable across operating systems.
 
+Database operations share a 12-second deadline per operation and follow client cancellation. A timed-out write may already have completed remotely, so retry it manually; note IDs and revision checks preserve the existing replay rules. Non-timeout data failures may retry once with the same payload. Missing database tables produce the migration instruction instead of a generic connection error.
+
 ## Data and limits
 
 Transcription sends audio and vocabulary to your selected provider. Refinement sends text to Mistral. Notes and settings are stored in Turso. Audio and pending drafts remain in IndexedDB in the current browser profile. Clearing browser data removes this local recovery space. Download important audio for a separate backup.

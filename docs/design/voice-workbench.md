@@ -1,6 +1,6 @@
 # Voice Workbench, Version 1
 
-Die Server-API, das Datenmodell und der erste vollständige Browserclient sind implementiert. Die aktuellen Client-Korrekturen sind lokal geprüft und warten auf ihre unabhängige Prüfung; die vollständige Release-Abnahme bleibt offen. Die Anwendung ist für lokalen Betrieb vorgesehen. Oberfläche, Laufzeitmeldungen, Code-Kommentare und Testbeschreibungen sind Englisch; die Sprache der Aufnahmen bleibt unabhängig davon.
+Die Server-API, das Datenmodell und der Browserclient sind implementiert. Client-Recovery, Fehlerzustände und Betriebsgrenzen sind lokal geprüft. Die vollständige Release-Abnahme bleibt offen. Die Anwendung ist für lokalen Betrieb vorgesehen. Oberfläche, Laufzeitmeldungen, Code-Kommentare und Testbeschreibungen sind Englisch; die Sprache der Aufnahmen bleibt unabhängig davon.
 
 ## Produktvertrag
 
@@ -23,6 +23,10 @@ Next.js App Router mit Node-Runtime, React/TypeScript, AI SDK mit Google/Mistral
 Ein projektspezifischer Node-Launcher lädt ausschließlich .env.local aus dem Produktverzeichnis mit Node parseEnv und setzt die fünf bekannten Konfigurationswerte ausdrücklich im Child-Prozess. Er entfernt TURSO_API_KEY und geerbte NEXT_PUBLIC-Werte, bevor Next gestartet wird. Zusätzliche Next-Env-Dateien und unbekannte Schlüssel in .env.local werden vor dev, start und build abgewiesen. Der Build benötigt keine Konfiguration; vorhandene echte Schlüssel werden durch gesetzte leere Werte gegen Nexts erneute Env-Auflösung abgeschirmt. Geerbte gleichnamige Variablen dürfen die Datei nicht übersteuern. Datenbank-URL/Token und APP_ORIGIN werden beim Start geprüft; Provider-Keys sind optional und ihre Verfügbarkeit wird angezeigt. Nur libsql:// oder https:// als Remote-DB-URL, keine lokale oder beliebige HTTP-Datenbank per Laufzeitkonfiguration. Fehlende Produktdatei führt zu einer konkreten Konfigurationsmeldung. Keine Secretprüfung beim statischen Build notwendig, Clients werden erst in den Routen initialisiert.
 
 Kontrolliert weitergeleitete SIGINT-/SIGTERM-Stopps enden mit Status 0; unerwartete Fehler bleiben Fehlerabschlüsse.
+
+Jede validierte Notes-/Settings-Operation hat ein gemeinsames Budget von zwölf Sekunden. Es beginnt nach dem Bodylesen und der Eingabevalidierung und gilt gemeinsam für alle Queries, HTTP-Anfragen und das Lesen ihrer Antworten. Clientabbruch wird an denselben Operationskontext weitergereicht. Die lokale Antwortfrist wird auch bei einer nicht kooperativen Testoperation eingehalten. Jeder API-Storagevorgang besitzt einen eigenen LibSQL-HTTP-Client; Abschluss oder Abbruch schließt nur diesen Client. Netzwerkverbindungen dürfen über den nativen Fetch-Pool wiederverwendet werden. Der Preis sind neue kleine HTTP-/Hrana-Client- und Limiterobjekte pro Operation; die SQL-Caches des gepinnten Treibers sind ohnehin pro Batch, Transaktion oder Stream gebunden. Dafür kann ein abgebrochener Vorgang keine andere Anfrage schließen. Kein allgemeiner Schreib-Mutex.
+
+Bei Ablauf: `504 storage_timeout`, bei Clientabbruch: `408 request_aborted`. Ein Schreibvorgang kann remote bereits committed sein; weder Timeout noch lokales Schließen versprechen Rollback. Wiederholen erfolgt manuell mit derselben ID, demselben Payload und derselben Ausgangsrevision; bestehende Replay-/CAS-Verträge bleiben gültig. Die 20-Sekunden-Clientfrist gilt weiterhin für den gesamten Datenrequest einschließlich Bodyübertragung. Fehlende bekannte Fachtabellen werden gezielt als `schema_unavailable` diagnostiziert; keine automatische Migration im Request.
 
 Runtime-Credential ist auf diese eine Datenbank beschränkt. In Version 1 dient derselbe Token für Schema-Migrationen und Datenzugriff und besitzt damit bewusst DDL-Rechte. Das zusätzliche Recht bleibt innerhalb der isolierten persönlichen Datenbank. Kein Gruppen- oder Plattformtoken zur Laufzeit.
 
@@ -95,7 +99,7 @@ Cloud-Edits: Debounce 700 ms, maximal ein PATCH je Note gleichzeitig. Während R
 
 Bibliothek und aktive Notiz revalidieren beim Start, Notizöffnen, Rückkehr zu visible und über einen manuellen Aktualisieren-Knopf. Der Bibliotheksfilter betrifft ausschließlich geladene Titel und deren 140-Zeichen-Vorschau, keine Volltextsuche. Die sichtbare Beschriftung nennt diesen Umfang. Höhere Serverrevision nur bei sauberem Editor übernehmen; bei abweichendem lokalem Entwurf als Konflikt anzeigen. Laufender Save wird zuerst abgeschlossen und die Revalidierung dann erneut eingeordnet.
 
-Client-Retries: Modell-POSTs niemals automatisch. Daten-GETs höchstens ein automatischer Retry bei Netz/5xx. PUT/PATCH höchstens ein Retry bei Netz/5xx mit identischen IDs, Payload und Revision, danach sichtbarer manueller Zustand. 4xx, 409, 410, 429 und Timeouts sind manuell zu behandeln. Wiederholung von Settings und DELETE folgt derselben endlichen Regel. Keine Endlosschleifen oder automatischer Wechsel des Providers.
+Client-Retries: Modell-POSTs niemals automatisch. Daten-GETs höchstens ein automatischer Retry bei Netzfehlern und Nicht-Timeout-5xx, auch bei unlesbarer 5xx-Antwort. PUT/PATCH höchstens ein solcher Retry mit identischen IDs, Payload und Revision, danach sichtbarer manueller Zustand. 4xx, 409, 410, 429, 408, 504 und `storage_timeout` sind manuell zu behandeln. Erkannte Konfigurations-/Schemafehler werden nicht automatisch wiederholt. Wiederholung von Settings und DELETE folgt derselben endlichen Regel. Keine Endlosschleifen oder automatischer Wechsel des Providers.
 
 Ein nach Neustart gelesener Entwurf wird vor dem erneuten lokalen Sicherungsversuch als eigene Sitzung geöffnet. Scheitert diese Sicherung, bleibt der Text sichtbar und exportierbar; ein Cloudwrite setzt weiterhin eine erfolgreiche lokale Sicherung voraus. Beim Bibliotheksöffnen wird eine gelöschte oder wegen ID-Konflikt gesperrte Sitzung nicht als Cache für eine vorhandene Cloudnotiz verwendet; der lokale Entwurf bleibt separat erhalten.
 
@@ -140,6 +144,7 @@ Export: Clipboard ausschließlich text/plain nach Klick, Erfolg erst nach fulfil
 | Unvollständige / zu große Ausgabe | 502 enhancement_incomplete / output_too_large | Keine Übernahme, Eingabe bleibt. |
 | Enhancementinput zu lang | 400 enhancement_input_too_long | Text unverändert, engere Grenze erklären. |
 | Datenbank oder Schema nicht erreichbar | 503 storage_unavailable / schema_unavailable | Lokal gesichert anzeigen, begrenzter DB-Retry. |
+| Datenbank-Operationsfrist | 504 storage_timeout | Unbekannter Schreibausgang möglich, nur manueller Retry mit derselben Replay-Identität. |
 | Notiz unbekannt / gelöscht | 404 note_not_found / 410 note_deleted | Entwurf behalten, nur ausdrücklich neue ID anlegen. |
 | Ursprung / Revision kollidiert | 409 id_conflict / revision_conflict | Beide Fassungen erhalten, Entscheidung. |
 | Unerwarteter Appfehler | 500 internal_error | Abstrakte Meldung, Zustand behalten. |

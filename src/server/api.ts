@@ -5,8 +5,9 @@ import { guard, readJson, parseInput } from "./http";
 import { readTranscription } from "./uploads";
 import { withModelSlot } from "./model-slots";
 import type { RuntimeConfig } from "./config";
-import type { Store } from "./store";
+import { parseListCursor, type Store } from "./store";
 import type { Models } from "./models";
+import { withStorageOperation } from "./storage-operation";
 import {
   PROVIDERS,
   LIMITS,
@@ -30,7 +31,7 @@ export type RequestLog = {
 };
 export type Dependencies = {
   getConfig: () => RuntimeConfig;
-  getStore: () => Store;
+  getStore: (signal: AbortSignal) => Store;
   getModels: () => Models;
   log?: (entry: RequestLog) => void;
   modelSlots?: { active: number };
@@ -86,6 +87,8 @@ export function createApi(deps: Dependencies) {
       )
         throw new ApiError("invalid_input");
       let result: unknown;
+      const storage = <T>(run: (store: Store) => Promise<T>) =>
+        withStorageOperation(request.signal, deps.getStore, run);
       if (route === "/config") {
         result = {
           providers: (Object.keys(PROVIDERS) as Provider[]).map((id) => {
@@ -107,34 +110,35 @@ export function createApi(deps: Dependencies) {
           },
         };
       } else if (route === "/notes") {
-        result = await deps
-          .getStore()
-          .list(url.searchParams.get("cursor") ?? undefined);
+        const cursor = url.searchParams.get("cursor") ?? undefined;
+        // Reject invalid input before allocating a remote client. Store also
+        // validates cursors for callers outside this API boundary.
+        if (cursor !== undefined) parseListCursor(cursor);
+        result = await storage((store) => store.list(cursor));
       } else if (match) {
         const id = parseInput(idSchema, match[1]);
-        if (request.method === "GET") result = await deps.getStore().get(id);
+        if (request.method === "GET")
+          result = await storage((store) => store.get(id));
         else {
           const body = await readJson(request);
-          if (request.method === "PUT")
-            result = await deps
-              .getStore()
-              .create(id, parseInput(createNoteSchema, body));
-          else if (request.method === "PATCH")
-            result = await deps
-              .getStore()
-              .update(id, parseInput(editSchema, body));
-          else {
-            await deps
-              .getStore()
-              .delete(id, parseInput(deleteSchema, body).expectedRevision);
+          if (request.method === "PUT") {
+            const input = parseInput(createNoteSchema, body);
+            result = await storage((store) => store.create(id, input));
+          } else if (request.method === "PATCH") {
+            const input = parseInput(editSchema, body);
+            result = await storage((store) => store.update(id, input));
+          } else {
+            const input = parseInput(deleteSchema, body);
+            await storage((store) => store.delete(id, input.expectedRevision));
             status = 204;
           }
         }
       } else if (route === "/settings") {
-        if (request.method === "GET") result = await deps.getStore().settings();
+        if (request.method === "GET")
+          result = await storage((store) => store.settings());
         else {
           const input = parseInput(settingsEditSchema, await readJson(request));
-          result = await deps.getStore().saveSettings(input);
+          result = await storage((store) => store.saveSettings(input));
         }
       } else {
         result = await withModelSlot(slots, async (lease) => {

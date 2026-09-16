@@ -23,6 +23,8 @@ Die eigene Anwendung hält Audioaufnahme, Modellverarbeitung und Notizspeicherun
 
 Modellkennungen sind deklarierte API-Kennungen; Aliase können beim Anbieter auf neue Revisionen zeigen. Metadaten sind keine attestierten Ausführungsbelege. Containerprüfung, Byte- und Zeitlimits bilden die Ressourcengrenze; eine Audiodauerdekodierung findet nicht statt. Die lokale Anwendung ist für einen Nutzer mit kurzen Aufnahmen ausgelegt.
 
+Remote-Speicheroperationen verwenden getrennte HTTP-Clients mit einem gemeinsamen Zwölf-Sekunden-Budget je Operation. Das erzeugt zusätzliche kleine HTTP-/Hrana-Client- und Limiterobjekte, erhält aber den nativen Netzwerkpool und isoliert Abbrüche zwischen gleichzeitigen Anfragen. SQL-Caches des gepinnten Treibers sind ohnehin an Batch, Transaktion oder Stream gebunden. Ein abgebrochener Write kann bereits committed sein; Replay und Revision bleiben deshalb die Bestätigung, nicht ein behaupteter Rollback. Fehlende Fachtabellen verlangen weiterhin die ausdrückliche Migration.
+
 ## Revisionsauslöser
 
 Systemweite Eingabe wird wichtig -> nativen Begleiter gesondert entscheiden. Regelmäßige Offlinearbeit -> lokalen Datenbestand und Konfliktvertrag entwerfen. Öffentlicher Netzbetrieb -> Auth, Quotas und Uploadbetrieb neu prüfen. Zusätzliche Provider dürfen Fähigkeiten deklarieren, keine UI-Schalter still ignorieren.

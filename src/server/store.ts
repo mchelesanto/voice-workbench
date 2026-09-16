@@ -1,5 +1,10 @@
 import "server-only";
-import type { Client, Transaction, Row } from "@libsql/client";
+import {
+  LibsqlError,
+  type Client,
+  type Transaction,
+  type Row,
+} from "@libsql/client";
 import { z } from "zod";
 import {
   noteSchema,
@@ -21,7 +26,7 @@ const cursorSchema = z.strictObject({
   updatedAt: isoSchema,
   id: idSchema,
 });
-function cursorDecode(cursor: string) {
+export function parseListCursor(cursor: string) {
   try {
     if (cursor.length > 256 || !/^[A-Za-z0-9_-]+$/.test(cursor))
       throw new Error();
@@ -62,12 +67,26 @@ const originFields = [
   "durationMs",
 ] as const;
 export class Store {
-  constructor(private readonly db: Client) {}
+  constructor(
+    private readonly db: Client,
+    private readonly release?: () => void,
+  ) {}
+  dispose() {
+    this.release?.();
+  }
   private async storage<T>(run: () => Promise<T>): Promise<T> {
     try {
       return await run();
     } catch (error) {
       if (error instanceof ApiError) throw error;
+      if (
+        error instanceof LibsqlError &&
+        error.code === "SQLITE_ERROR" &&
+        /\bno such table: (?:notes|settings|deleted_notes)\b/i.test(
+          error.message,
+        )
+      )
+        throw new ApiError("schema_unavailable");
       throw new ApiError("storage_unavailable");
     }
   }
@@ -107,7 +126,7 @@ export class Store {
     });
   }
   async list(cursor?: string): Promise<NotePage> {
-    const after = cursor === undefined ? undefined : cursorDecode(cursor);
+    const after = cursor === undefined ? undefined : parseListCursor(cursor);
     return this.storage(async () => {
       const r = await this.db.execute(
         after

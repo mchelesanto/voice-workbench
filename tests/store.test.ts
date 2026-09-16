@@ -156,9 +156,15 @@ describe("Shared vocabulary", () => {
       code: "schema_unavailable",
     });
   });
-  it("maps database failures to sanitized errors", async () => {
+  it("maps missing schema tables to an actionable setup error", async () => {
     await client.execute("DROP TABLE notes");
     await expect(store.list()).rejects.toMatchObject({
+      code: "schema_unavailable",
+    });
+  });
+  it("keeps non-schema database failures sanitized", async () => {
+    client.close();
+    await expect(store.settings()).rejects.toMatchObject({
       code: "storage_unavailable",
     });
   });

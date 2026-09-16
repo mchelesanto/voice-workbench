@@ -30,6 +30,9 @@
 
 ### Fixed
 
+- Bound storage operations and their HTTP transport with isolated request cancellation and explicit timeout outcomes.
+- Retry retryable or unreadable non-timeout data 5xx responses once, keeping configuration and schema failures manual, and diagnose missing tables without exposing database errors.
+
 - Confirm local recordings after later successful saves and matching cloud reads without overwriting newer processing attempts.
 - Keep recovery provider choices and persisted error actions explicit, including setup failures and oversized audio.
 
