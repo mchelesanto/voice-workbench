@@ -48,6 +48,7 @@ export type EditorPorts = {
     revision: number | null,
   ) => Promise<Note>;
   changed: () => void;
+  confirmed?: (note: Note) => void;
   localChanged?: () => void;
 };
 export class EditorSession {
@@ -379,6 +380,11 @@ export class EditorSession {
         else throw error;
       }
       if (this.cannotSave()) return;
+      try {
+        this.ports.confirmed?.(note);
+      } catch {
+        // Recording bookkeeping cannot reverse a cloud confirmation.
+      }
       if (
         revision === null &&
         classifyCreateReplay(sent, note) !== "confirmed"
@@ -443,6 +449,11 @@ export class EditorSession {
     if (this.busy) {
       this.refreshAfter = note;
       return;
+    }
+    try {
+      this.ports.confirmed?.(note);
+    } catch {
+      // A local recording acknowledgement is independent of the cloud note.
     }
     if (note.revision <= (this.state.baseRevision ?? 0)) return;
     if (this.state.status === "saved") {

@@ -30,6 +30,9 @@
 
 ### Fixed
 
+- Confirm local recordings after later successful saves and matching cloud reads without overwriting newer processing attempts.
+- Keep recovery provider choices and persisted error actions explicit, including setup failures and oversized audio.
+
 - Open recovered drafts even when their new local copy cannot be saved, and keep existing cloud notes accessible after an identifier conflict.
 - Validate launcher exit codes on Windows without assuming POSIX signal delivery.
 - Keep recovery actions beside their own warnings, show both conflict previews with explicit replacement choices, and announce local failures accessibly.

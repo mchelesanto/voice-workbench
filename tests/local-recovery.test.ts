@@ -4,6 +4,8 @@ import {
   mergeLocalRecords,
   needsLocalAttention,
   warnBeforeLeaving,
+  type LocalRecord,
+  type Recording,
 } from "../src/client/local-store";
 
 const source = {
@@ -30,9 +32,9 @@ const draft: Draft = {
 };
 
 // Model the storage boundary's request/commit events, not its cleanup decision.
-async function storage(row: Draft) {
+async function storage(row: LocalRecord) {
   vi.resetModules();
-  const rows = new Map([[row.draftId, row]]);
+  const rows = new Map([[row.kind === "draft" ? row.draftId : row.id, row]]);
   const modes: IDBTransactionMode[] = [];
   const db = {
     close: vi.fn(),
@@ -56,6 +58,12 @@ async function storage(row: Draft) {
               rows.delete(key);
               return {} as IDBRequest;
             },
+            put(value: LocalRecord, key: string) {
+              if (mode !== "readwrite")
+                throw new DOMException("Read only", "ReadOnlyError");
+              rows.set(key, value);
+              return {} as IDBRequest;
+            },
           };
         },
       } as unknown as IDBTransaction;
@@ -72,8 +80,9 @@ async function storage(row: Draft) {
       return request;
     },
   });
-  const { retireRecovered } = await import("../src/client/local-store");
-  return { rows, modes, retireRecovered };
+  const { retireRecovered, confirmRecording } =
+    await import("../src/client/local-store");
+  return { rows, modes, retireRecovered, confirmRecording };
 }
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -93,7 +102,9 @@ it("preserves a changed source even when its timestamp is unchanged", async () =
     input: { ...draft.input, body: "A newer thought" },
   });
   await retireRecovered(source);
-  expect(rows.get(source.draftId)?.input.body).toBe("A newer thought");
+  expect(rows.get(source.draftId)).toMatchObject({
+    input: { body: "A newer thought" },
+  });
 });
 it("retires the exact source using one readwrite transaction", async () => {
   const { rows, modes, retireRecovered } = await storage(draft);
@@ -132,4 +143,47 @@ it("keeps local warnings visible without pretending confirmed cloud text is at r
     warnBeforeLeaving({ ...saved, status: "deleted", durable: true }),
   ).toBe(false);
   expect(warnBeforeLeaving({ ...saved, status: "conflict" })).toBe(true);
+});
+
+const audio: Recording = {
+  kind: "recording",
+  id: draft.noteId,
+  blob: new Blob(["audio"]),
+  mime: "audio/webm",
+  durationMs: 1000,
+  createdAt: source.updatedAt,
+  provider: "google",
+  mode: "verbatim",
+  state: "transcribed",
+  result: source.input,
+};
+const cloud = {
+  ...source.input,
+  id: audio.id,
+  title: "Edited title",
+  body: "Edited body",
+  revision: 2,
+  createdAt: source.updatedAt,
+  updatedAt: source.updatedAt,
+};
+it("confirms the current stored recording in one committed readwrite transaction", async () => {
+  const { rows, modes, confirmRecording } = await storage(audio);
+  expect((await confirmRecording(cloud))?.state).toBe("cloud_confirmed");
+  expect(rows.get(audio.id)).toMatchObject({
+    state: "cloud_confirmed",
+    result: source.input,
+  });
+  expect(modes).toEqual(["readwrite"]);
+});
+it("does not resurrect a recording removed before its cloud acknowledgement", async () => {
+  const { rows, confirmRecording } = await storage(audio);
+  rows.delete(audio.id);
+  expect(await confirmRecording(cloud)).toBeUndefined();
+  expect(rows.size).toBe(0);
+});
+it("preserves newer processing state read from storage at acknowledgement time", async () => {
+  const { rows, confirmRecording } = await storage(audio);
+  rows.set(audio.id, { ...audio, state: "transcribing" });
+  expect(await confirmRecording(cloud)).toBeUndefined();
+  expect(rows.get(audio.id)).toMatchObject({ state: "transcribing" });
 });

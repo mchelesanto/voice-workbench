@@ -7,7 +7,10 @@ import {
   noteSchema,
   providerSchema,
   revisionSchema,
+  type Note,
 } from "../shared/contracts";
+import { errorCodeSchema, type ErrorCode } from "../shared/responses";
+import { recordingConfirmation } from "./recording-recovery";
 import type { Draft } from "./editor";
 export type Recording = {
   kind: "recording";
@@ -27,6 +30,7 @@ export type Recording = {
     | "cloud_confirmed";
   result?: Draft["input"];
   error?: string;
+  errorCode?: ErrorCode;
 };
 export type LocalRecord = Draft | Recording;
 export function mergeLocalRecords(
@@ -122,6 +126,7 @@ const recordingSchema = z.object({
   ]),
   result: createNoteSchema.optional(),
   error: z.string().max(1000).optional(),
+  errorCode: errorCodeSchema.optional(),
 });
 let database: Promise<IDBDatabase> | undefined;
 function open() {
@@ -169,6 +174,27 @@ export async function putLocal(record: LocalRecord) {
 }
 export async function removeLocal(id: string) {
   await transaction("readwrite", (store) => store.delete(id));
+}
+// Read and confirm in one transaction: late cloud replies cannot overwrite
+// a deleted recording or a newer local transcription attempt.
+export async function confirmRecording(
+  note: Note,
+): Promise<Recording | undefined> {
+  const db = await open();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("records", "readwrite");
+    const store = tx.objectStore("records");
+    let confirmed: Recording | undefined;
+    const request = store.get(note.id);
+    request.onsuccess = () => {
+      const parsed = recordingSchema.safeParse(request.result);
+      if (parsed.success) confirmed = recordingConfirmation(parsed.data, note);
+      if (confirmed) store.put(confirmed, note.id);
+    };
+    tx.oncomplete = () => resolve(confirmed);
+    tx.onerror = tx.onabort = () =>
+      reject(tx.error ?? new Error("Local recording confirmation failed"));
+  });
 }
 // Delete only the exact recovered snapshot, never a newer edit from another tab.
 export async function retireRecovered(

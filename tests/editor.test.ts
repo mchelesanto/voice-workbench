@@ -306,6 +306,51 @@ it("does not turn a failed view refresh into a failed cloud save", async () => {
   session.dispose();
 });
 
+it("notifies recording recovery after a later successful save despite edits while saving", async () => {
+  const { session, ports } = setup();
+  ports.confirmed = vi.fn();
+  ports.write = vi.fn().mockRejectedValueOnce(new ClientError("Offline"));
+  session.edit({ body: "First version" });
+  await session.save();
+  expect(ports.confirmed).not.toHaveBeenCalled();
+  let finish!: (note: Note) => void;
+  ports.write = vi.fn(
+    () =>
+      new Promise<Note>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const saving = session.save();
+  await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
+  session.edit({ body: "Still newer work" });
+  finish({ ...note, body: "First version", revision: 2 });
+  await saving;
+  expect(ports.confirmed).toHaveBeenCalledWith(
+    expect.objectContaining({ body: "First version", revision: 2 }),
+  );
+  expect(session.snapshot().input.body).toBe("Still newer work");
+  expect(session.snapshot().status).toBe("local");
+  session.dispose();
+});
+
+it("notifies recording recovery when a lost save response is confirmed by conflict replay", async () => {
+  const { session, ports } = setup();
+  ports.confirmed = vi.fn();
+  ports.write = vi.fn(async () => {
+    throw new ClientError("Conflict", 409, "revision_conflict", {
+      ...note,
+      body: "Saved words",
+      revision: 2,
+    });
+  });
+  session.edit({ body: "Saved words" });
+  await session.save();
+  expect(ports.confirmed).toHaveBeenCalledWith(
+    expect.objectContaining({ body: "Saved words", revision: 2 }),
+  );
+  session.dispose();
+});
+
 it("resumes autosave for edits made during a slow local-only cleanup", async () => {
   vi.useFakeTimers();
   const { session: initial, ports } = setup();

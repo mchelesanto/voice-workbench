@@ -47,6 +47,7 @@ import {
   type Provider,
   type Settings,
   type Enhancement,
+  type Note,
 } from "../shared/contracts";
 import {
   configSchema,
@@ -67,11 +68,18 @@ import {
   mergeLocalRecords,
   needsLocalAttention,
   warnBeforeLeaving,
+  confirmRecording,
   type LocalRecord,
   type Recording,
 } from "./local-store";
 import { download, duration, exportNote } from "./export";
 import { useRecorder } from "./use-recorder";
+import {
+  recordingConfirmation,
+  recordingRecovery,
+  recordingProvider,
+  selectLocalRecording,
+} from "./recording-recovery";
 
 const emptyPage: NotePage = { items: [], nextCursor: null };
 const statuses = {
@@ -281,11 +289,32 @@ export function Workbench() {
       if (ticket === listTicket.current) setLoading(false);
     }
   }, []);
+  const acknowledgeRecording = useCallback(
+    (note: Note) => {
+      void confirmRecording(note)
+        .then((confirmed) => {
+          if (!confirmed) return;
+          setRecording((current) =>
+            current
+              ? (recordingConfirmation(current, note) ?? current)
+              : current,
+          );
+          void refreshLocal();
+        })
+        .catch(() => {
+          setError(
+            "Saved to cloud. The recording status on this device could not be updated. Open the cloud note again to retry.",
+          );
+        });
+    },
+    [refreshLocal],
+  );
   const ports = useCallback(
     (): EditorPorts => ({
       persist: putLocal,
       remove: removeLocal,
       retire: retireRecovered,
+      confirmed: acknowledgeRecording,
       localChanged: () => {
         void refreshLocal();
       },
@@ -306,7 +335,7 @@ export function Workbench() {
                 },
         }),
     }),
-    [refresh, refreshLocal],
+    [refresh, refreshLocal, acknowledgeRecording],
   );
   const activate = useCallback(
     (session: EditorSession) => {
@@ -381,18 +410,13 @@ export function Workbench() {
       await session.secure();
       activate(session);
       await session.save();
-      if (session.snapshot().status === "saved") {
-        const confirmed: Recording = { ...item, state: "cloud_confirmed" };
-        await putLocal(confirmed);
-        setRecording(confirmed);
-      }
       await refreshLocal();
     },
     [ports, activate, refreshLocal],
   );
   const transcribe = useCallback(
     async (item: Recording) => {
-      if (processingRef.current || !settings) return;
+      if (processingRef.current || (!item.result && !settings)) return;
       processingRef.current = true;
       setProcessing(true);
       setError("");
@@ -401,17 +425,36 @@ export function Workbench() {
       modelAbort.current = controller;
       let progress: Recording = item;
       try {
-        await putLocal(item);
+        const recovery = recordingRecovery(item);
+        const stored: Recording =
+          item.blob.size > 25 * 1024 * 1024 && !item.result
+            ? {
+                ...item,
+                state: "error",
+                errorCode: "audio_too_large",
+                error: recovery.hint,
+              }
+            : item;
+        setRecording(stored);
+        setRecordingDurable(false);
+        await putLocal(stored);
         setRecordingDurable(true);
-        if (item.blob.size > 25 * 1024 * 1024)
-          throw new ClientError(
-            "This recording exceeds 25 MiB. Please download it.",
+        if (recovery.action === "none") {
+          setError(
+            recovery.hint ?? "This recording is already saved to cloud.",
           );
+          return;
+        }
         if (item.result) {
           await createFromRecording(item);
           return;
         }
-        const pending: Recording = { ...item, state: "transcribing" };
+        const pending: Recording = {
+          ...item,
+          state: "transcribing",
+          error: undefined,
+          errorCode: undefined,
+        };
         await putLocal(pending);
         progress = pending;
         setRecording(pending);
@@ -426,7 +469,7 @@ export function Workbench() {
         form.set("audio", item.blob, `recording.${extension}`);
         form.set("provider", item.provider);
         form.set("mode", item.mode);
-        form.set("vocabulary", JSON.stringify(settings.vocabulary));
+        form.set("vocabulary", JSON.stringify(settings!.vocabulary));
         const result = await request("/transcribe", transcriptionResultSchema, {
           method: "POST",
           body: form,
@@ -446,6 +489,8 @@ export function Workbench() {
           ...item,
           state: "transcribed",
           result: input,
+          error: undefined,
+          errorCode: undefined,
         };
         progress = done;
         setRecording(done);
@@ -461,6 +506,7 @@ export function Workbench() {
             ...progress,
             state: modelFailureState(e),
             error: message(e),
+            errorCode: e instanceof ClientError ? e.code : undefined,
           };
           setRecording(failed);
           await putLocal(failed).catch(() => {});
@@ -500,6 +546,7 @@ export function Workbench() {
     openTicket.current++;
     setOpening(false);
     setActive(null);
+    setRecording(null);
     void recorder.start(provider, mode);
   };
   useEffect(() => {
@@ -550,6 +597,7 @@ export function Workbench() {
     setError("");
     try {
       const note = await request(`/notes/${id}`, noteSchema);
+      acknowledgeRecording(note);
       if (ticket !== openTicket.current) return;
       if (existing) existing.revalidate(note);
       else activate(EditorSession.fromNote(note, ports()));
@@ -636,6 +684,9 @@ export function Workbench() {
     : recording;
   const visibleRecordingDurable =
     visibleRecording?.id === recording?.id ? recordingDurable : true;
+  const recoveryAction = visibleRecording
+    ? recordingRecovery(visibleRecording)
+    : null;
   async function secureRecording(item: Recording) {
     try {
       await putLocal(item);
@@ -750,6 +801,7 @@ export function Workbench() {
           setOpening(false);
           setActive(null);
           setPanel(null);
+          if (recordingDurable) setRecording(null);
         }}
       >
         <Plus size={19} /> New recording <span>＋</span>
@@ -908,7 +960,11 @@ export function Workbench() {
             <span>Workspace</span>
             <ChevronRight size={14} />
             <span className="breadcrumb-current">
-              {active ? "Note" : "New recording"}
+              {active
+                ? "Note"
+                : visibleRecording && !locked
+                  ? "Recording"
+                  : "New recording"}
             </span>
           </div>
           <button className="local-badge" onClick={() => setPanel("help")}>
@@ -944,7 +1000,7 @@ export function Workbench() {
               {localError}
             </div>
           )}
-          {!active && unsaved.length > 0 && !locked && (
+          {!active && !visibleRecording && unsaved.length > 0 && !locked && (
             <div className="notice recovery-notice" role="status">
               <span>Your unfinished thoughts are still here.</span>
               <button
@@ -998,6 +1054,12 @@ export function Workbench() {
                 void session.save();
               }}
             />
+          ) : visibleRecording && !locked ? (
+            <section className="recording-heading">
+              <div className="section-label">YOUR RECORDING</div>
+              <h1>Recover your recording.</h1>
+              <p>Listen, recover your transcript, or download the audio.</p>
+            </section>
           ) : (
             <section className="blank-workspace">
               <div className="section-label">
@@ -1068,18 +1130,31 @@ export function Workbench() {
                 <AudioLines size={19} />
                 <div>
                   <strong>
-                    {visibleRecording.result?.title || "New recording"}
+                    {visibleRecording.result?.title || "Recorded thought"}
                   </strong>
                   <small>
-                    {duration(visibleRecording.durationMs)} ·{" "}
+                    {duration(visibleRecording.durationMs)} · Recorded with{" "}
+                    {recordingProvider(visibleRecording)} ·{" "}
                     {visibleRecordingDurable
                       ? "Audio saved in this browser"
                       : "In memory only. Save or download before leaving."}
                   </small>
                 </div>
               </div>
-              {visibleRecording.error && (
-                <p className="field-hint">{visibleRecording.error}</p>
+              {visibleRecording.error &&
+                visibleRecording.error !== recoveryAction?.hint && (
+                  <p className="recording-error" role="status">
+                    {visibleRecording.error}
+                  </p>
+                )}
+              {recoveryAction?.hint && (
+                <p
+                  className={
+                    visibleRecording.error ? "field-hint" : "recording-error"
+                  }
+                >
+                  {recoveryAction.hint}
+                </p>
               )}
               {["transcribing", "unknown"].includes(visibleRecording.state) && (
                 <p className="field-hint">
@@ -1133,29 +1208,32 @@ export function Workbench() {
                     Save on this device
                   </button>
                 )}
-                {visibleRecording.state !== "cloud_confirmed" &&
-                  visibleRecording.blob.size <= 25 * 1024 * 1024 && (
-                    <button
-                      className="secondary"
-                      disabled={locked || !settings}
-                      onClick={() => {
-                        if (
-                          ["transcribing", "unknown"].includes(
-                            visibleRecording.state,
-                          ) &&
-                          !window.confirm(
-                            "Transcribe again? The previous request may already have incurred a charge.",
-                          )
+                {recoveryAction && recoveryAction.action !== "none" && (
+                  <button
+                    className="secondary"
+                    disabled={locked || (!visibleRecording.result && !settings)}
+                    onClick={() => {
+                      if (
+                        recoveryAction.action === "setup" &&
+                        !window.confirm(recoveryAction.setupPrompt!)
+                      )
+                        return;
+                      if (
+                        ["transcribing", "unknown"].includes(
+                          visibleRecording.state,
+                        ) &&
+                        !window.confirm(
+                          "Transcribe again? The previous request may already have incurred a charge.",
                         )
-                          return;
-                        void transcribe(visibleRecording);
-                      }}
-                    >
-                      {visibleRecording.result
-                        ? "Save transcript to library"
-                        : "Transcribe audio"}
-                    </button>
-                  )}
+                      )
+                        return;
+                      void transcribe(visibleRecording);
+                    }}
+                  >
+                    {recoveryAction.label} ·{" "}
+                    {recordingProvider(visibleRecording)}
+                  </button>
+                )}
                 <button
                   className="text-button"
                   onClick={() => audioDownload(visibleRecording)}
@@ -1213,6 +1291,9 @@ export function Workbench() {
             </div>
           </div>
           <div className="dock-center">
+            {!locked && (
+              <span className="next-recording-label">Next recording</span>
+            )}
             {locked ? (
               <Wave animated />
             ) : (
@@ -1261,6 +1342,16 @@ export function Workbench() {
             </button>
           )}
         </footer>
+        {!settings && !locked && (
+          <div className="recording-setup-notice" role="status">
+            <span>
+              Recording is unavailable until vocabulary settings load.
+            </span>
+            <button className="text-button" onClick={() => void setup()}>
+              Check connection
+            </button>
+          </div>
+        )}
         <div className="workspace-footnote">
           <span>
             {available
@@ -1411,11 +1502,17 @@ export function Workbench() {
                         )}{" "}
                         ·{" "}
                         {item.kind === "recording"
-                          ? item.result
-                            ? "Transcript ready"
-                            : ["transcribing", "unknown"].includes(item.state)
-                              ? "Processing outcome unknown"
-                              : "Audio available"
+                          ? `${recordingProvider(item)} · ${
+                              item.state === "cloud_confirmed"
+                                ? "Saved to cloud"
+                                : item.result
+                                  ? "Transcript ready"
+                                  : ["transcribing", "unknown"].includes(
+                                        item.state,
+                                      )
+                                    ? "Processing outcome unknown"
+                                    : "Audio available"
+                            }`
                           : `Draft · ${item.status === "local" && !item.durable ? "Not saved" : statuses[item.status]}${!item.durable && item.status !== "saved" ? " · In memory only" : item.localIssue ? " · Local warning" : ""}`}
                       </small>
                     </div>
@@ -1426,8 +1523,21 @@ export function Workbench() {
                         onClick={() => {
                           if (item.kind === "draft") void restore(item);
                           else {
-                            setRecording(item);
-                            setRecordingDurable(true);
+                            const selection = selectLocalRecording(
+                              recording,
+                              recordingDurable,
+                              item,
+                            );
+                            if (!selection) {
+                              setLocalError(
+                                "Save or download the recording held in this tab, then explicitly remove that in-memory copy before opening another recording.",
+                              );
+                              return;
+                            }
+                            openTicket.current++;
+                            setOpening(false);
+                            setRecording(selection.recording);
+                            setRecordingDurable(selection.durable);
                             setActive(null);
                             setPanel(null);
                             if (item.state === "cloud_confirmed")

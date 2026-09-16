@@ -43,6 +43,8 @@ Credentials belong exclusively in the ignored `.env.local`. The launcher rejects
 
 The library filter searches titles and the first 140 characters of each loaded note, not full text. Use **Load more notes** to include older notes. The refresh button updates both the library and the open note, as does returning to the tab.
 
+Recovery identifies the provider and mode stored with each recording. Changing the recording bar affects the next recording only. Unsupported or oversized audio is retained for download, with no unchanged upload offered. Configuration failures explain the setup step and require your acknowledgement before retrying. Later successful saves and reopening a cloud note also confirm the matching local recording, even if its working text has since changed.
+
 ## Checks
 
 - `npm test`: deterministic tests without live provider or cloud calls.
