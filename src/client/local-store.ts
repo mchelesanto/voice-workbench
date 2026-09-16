@@ -10,7 +10,10 @@ import {
   type Note,
 } from "../shared/contracts";
 import { errorCodeSchema, type ErrorCode } from "../shared/responses";
-import { recordingConfirmation } from "./recording-recovery";
+import {
+  recordingConfirmation,
+  sameRecordingSnapshot,
+} from "./recording-recovery";
 import type { Draft } from "./editor";
 export type Recording = {
   kind: "recording";
@@ -31,28 +34,29 @@ export type Recording = {
   result?: Draft["input"];
   error?: string;
   errorCode?: ErrorCode;
+  attemptId?: string;
+  durable?: boolean;
+  // RAM-only result that no longer owns the saved recording state.
+  superseded?: boolean;
 };
 export type LocalRecord = Draft | Recording;
 export function mergeLocalRecords(
   stored: LocalRecord[],
-  live: Draft[],
+  live: LocalRecord[],
 ): LocalRecord[] {
   const key = (row: LocalRecord) =>
     row.kind === "draft" ? `draft:${row.draftId}` : `recording:${row.id}`;
   return [
     ...new Map(
-      [
-        ...stored.map((row) =>
-          row.kind === "draft" ? { ...row, durable: true } : row,
-        ),
-        ...live,
-      ].map((row) => [key(row), row]),
+      [...stored.map((row) => ({ ...row, durable: true })), ...live].map(
+        (row) => [key(row), row],
+      ),
     ).values(),
   ];
 }
 export function needsLocalAttention(row: LocalRecord) {
   return row.kind === "recording"
-    ? row.state !== "cloud_confirmed"
+    ? row.state !== "cloud_confirmed" || row.durable === false
     : row.status !== "saved" || !!row.localIssue;
 }
 export function warnBeforeLeaving(draft: Draft) {
@@ -127,6 +131,8 @@ const recordingSchema = z.object({
   result: createNoteSchema.optional(),
   error: z.string().max(1000).optional(),
   errorCode: errorCodeSchema.optional(),
+  attemptId: idSchema.optional(),
+  durable: z.boolean().optional(),
 });
 let database: Promise<IDBDatabase> | undefined;
 function open() {
@@ -174,6 +180,91 @@ export async function putLocal(record: LocalRecord) {
 }
 export async function removeLocal(id: string) {
   await transaction("readwrite", (store) => store.delete(id));
+}
+async function changeRecording(
+  id: string,
+  update: (current: Recording | undefined) => Recording | null | undefined,
+) {
+  const db = await open();
+  return new Promise<Recording | null | undefined>((resolve, reject) => {
+    const tx = db.transaction("records", "readwrite");
+    const store = tx.objectStore("records");
+    const request = store.get(id);
+    let next: Recording | null | undefined;
+    request.onsuccess = () => {
+      const parsed = recordingSchema.safeParse(request.result);
+      if (request.result !== undefined && !parsed.success) return;
+      const value = update(parsed.success ? parsed.data : undefined);
+      if (value === null) {
+        next = null;
+        store.delete(id);
+      } else if (value) {
+        next = { ...value, durable: true };
+        store.put(next, id);
+      }
+    };
+    tx.oncomplete = () => resolve(next);
+    tx.onerror = tx.onabort = () =>
+      reject(tx.error ?? new Error("Recording storage failed"));
+  });
+}
+export async function readRecording(id: string) {
+  const value = await transaction("readonly", (store) => store.get(id));
+  const parsed = recordingSchema.safeParse(value);
+  return parsed.success ? { ...parsed.data, durable: true } : undefined;
+}
+export function secureRecordingCopy(record: Recording, allowCreate = false) {
+  return changeRecording(record.id, (current) => {
+    if (record.superseded) return;
+    if (!current)
+      return allowCreate && !record.attemptId && record.durable !== true
+        ? record
+        : undefined;
+    if (sameRecordingSnapshot(current, record)) return record;
+    // A successful result retained in RAM can finish its own pending attempt.
+    if (
+      current.attemptId === record.attemptId &&
+      current.state === "transcribing" &&
+      ["transcribed", "error", "unknown"].includes(record.state)
+    )
+      return record;
+    return undefined;
+  });
+}
+export function beginRecordingAttempt(expected: Recording) {
+  return changeRecording(expected.id, (current) => {
+    if (
+      !current ||
+      !sameRecordingSnapshot(current, expected) ||
+      current.result ||
+      current.state === "cloud_confirmed"
+    )
+      return;
+    return {
+      ...current,
+      attemptId: crypto.randomUUID(),
+      state: "transcribing",
+      error: undefined,
+      errorCode: undefined,
+    };
+  });
+}
+export async function removeRecordingSnapshot(expected: Recording) {
+  return (
+    (await changeRecording(expected.id, (current) =>
+      !current || sameRecordingSnapshot(current, expected) ? null : undefined,
+    )) === null
+  );
+}
+export function completeRecordingAttempt(expected: Recording, next: Recording) {
+  return changeRecording(expected.id, (current) =>
+    current &&
+    next.id === expected.id &&
+    next.attemptId === expected.attemptId &&
+    sameRecordingSnapshot(current, expected)
+      ? next
+      : undefined,
+  );
 }
 // Read and confirm in one transaction: late cloud replies cannot overwrite
 // a deleted recording or a newer local transcription attempt.

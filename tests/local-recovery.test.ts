@@ -80,9 +80,24 @@ async function storage(row: LocalRecord) {
       return request;
     },
   });
-  const { retireRecovered, confirmRecording } =
-    await import("../src/client/local-store");
-  return { rows, modes, retireRecovered, confirmRecording };
+  const {
+    retireRecovered,
+    confirmRecording,
+    beginRecordingAttempt,
+    completeRecordingAttempt,
+    secureRecordingCopy,
+    removeRecordingSnapshot,
+  } = await import("../src/client/local-store");
+  return {
+    rows,
+    modes,
+    retireRecovered,
+    confirmRecording,
+    beginRecordingAttempt,
+    completeRecordingAttempt,
+    secureRecordingCopy,
+    removeRecordingSnapshot,
+  };
 }
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -187,3 +202,136 @@ it("preserves newer processing state read from storage at acknowledgement time",
   expect(await confirmRecording(cloud)).toBeUndefined();
   expect(rows.get(audio.id)).toMatchObject({ state: "transcribing" });
 });
+
+it("keeps a live RAM recording and transcript ahead of a stale stored attempt", () => {
+  const live = {
+    ...audio,
+    durable: false,
+    result: { ...source.input, body: "Completed only in RAM" },
+  };
+  const merged = mergeLocalRecords(
+    [{ ...audio, state: "transcribing", result: undefined }],
+    [live],
+  );
+  expect(merged).toEqual([live]);
+  expect(needsLocalAttention(live)).toBe(true);
+});
+it("atomically rejects stale starts and completions across recording attempts", async () => {
+  const initial: Recording = { ...audio, state: "recorded", result: undefined };
+  const {
+    rows,
+    beginRecordingAttempt,
+    completeRecordingAttempt,
+    confirmRecording,
+    secureRecordingCopy,
+  } = await storage(initial);
+  const first = (await beginRecordingAttempt(initial))!;
+  expect(first.attemptId).toBeTruthy();
+  expect(await beginRecordingAttempt(initial)).toBeUndefined();
+  const second = (await beginRecordingAttempt(first))!;
+  expect(second.attemptId).not.toBe(first.attemptId);
+  const done = {
+    ...second,
+    state: "transcribed" as const,
+    result: source.input,
+  };
+  expect((await completeRecordingAttempt(second, done))?.state).toBe(
+    "transcribed",
+  );
+  await confirmRecording(cloud);
+  expect(
+    await completeRecordingAttempt(first, {
+      ...first,
+      state: "error",
+      error: "Older request failed",
+    }),
+  ).toBeUndefined();
+  expect(
+    await secureRecordingCopy(
+      {
+        ...first,
+        state: "transcribed",
+        result: { ...source.input, body: "Old result" },
+      },
+      true,
+    ),
+  ).toBeUndefined();
+  expect(rows.get(audio.id)).toMatchObject({
+    state: "cloud_confirmed",
+    attemptId: second.attemptId,
+    result: source.input,
+  });
+});
+it("does not recreate a recording deleted while its model request was pending", async () => {
+  const initial: Recording = { ...audio, state: "recorded", result: undefined };
+  const { rows, beginRecordingAttempt, completeRecordingAttempt } =
+    await storage(initial);
+  const pending = (await beginRecordingAttempt(initial))!;
+  rows.delete(audio.id);
+  expect(
+    await completeRecordingAttempt(pending, {
+      ...pending,
+      state: "transcribed",
+      result: source.input,
+    }),
+  ).toBeUndefined();
+  expect(rows.has(audio.id)).toBe(false);
+});
+it("allows an explicit RAM result to finish only its own pending storage attempt", async () => {
+  const initial: Recording = { ...audio, state: "recorded", result: undefined };
+  const { beginRecordingAttempt, secureRecordingCopy } = await storage(initial);
+  const pending = (await beginRecordingAttempt(initial))!;
+  expect(
+    (
+      await secureRecordingCopy({
+        ...pending,
+        state: "transcribed",
+        result: source.input,
+      })
+    )?.state,
+  ).toBe("transcribed");
+});
+
+it("does not revive a deleted attempt through the explicit local-copy retry", async () => {
+  const initial: Recording = { ...audio, state: "recorded", result: undefined };
+  const { rows, beginRecordingAttempt, secureRecordingCopy } =
+    await storage(initial);
+  const pending = (await beginRecordingAttempt(initial))!;
+  rows.delete(initial.id);
+  expect(
+    await secureRecordingCopy(
+      { ...pending, state: "transcribed", result: source.input },
+      true,
+    ),
+  ).toBeUndefined();
+  expect(rows.size).toBe(0);
+});
+it("deletes only the displayed recording snapshot, preserving a newer attempt", async () => {
+  const initial: Recording = { ...audio, state: "recorded", result: undefined };
+  const { rows, beginRecordingAttempt, removeRecordingSnapshot } =
+    await storage(initial);
+  const newer = (await beginRecordingAttempt(initial))!;
+  expect(await removeRecordingSnapshot(initial)).toBe(false);
+  expect(rows.get(initial.id)).toMatchObject({ attemptId: newer.attemptId });
+  expect(await removeRecordingSnapshot(newer)).toBe(true);
+  expect(rows.size).toBe(0);
+});
+it("can save a never-persisted RAM recording but cannot recreate an already durable one", async () => {
+  const initial: Recording = { ...audio, state: "recorded", result: undefined };
+  const { rows, secureRecordingCopy } = await storage(initial);
+  rows.delete(initial.id);
+  expect(
+    await secureRecordingCopy({ ...initial, durable: true }, true),
+  ).toBeUndefined();
+  expect((await secureRecordingCopy(initial, true))?.durable).toBe(true);
+});
+
+it.each(["transcribed", "cloud_confirmed"] as const)(
+  "never claims a new model attempt for a completed %s recording",
+  async (state) => {
+    const completed: Recording = { ...audio, state };
+    const { rows, beginRecordingAttempt } = await storage(completed);
+    expect(await beginRecordingAttempt(completed)).toBeUndefined();
+    expect(rows.get(audio.id)).toEqual(completed);
+  },
+);

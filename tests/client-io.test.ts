@@ -3,6 +3,52 @@ import { z } from "zod";
 import { request, ClientError, modelFailureState } from "../src/client/api";
 import { filename, markdown } from "../src/client/export";
 afterEach(() => vi.unstubAllGlobals());
+it("shares the twenty-second response deadline across a late data retry", async () => {
+  vi.useFakeTimers();
+  const deadline = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+    const controller = new AbortController();
+    setTimeout(
+      () => controller.abort(new DOMException("Timed out", "TimeoutError")),
+      ms,
+    );
+    return controller.signal;
+  });
+  const fetch = vi
+    .fn()
+    .mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          setTimeout(
+            () => resolve(new Response("gateway failure", { status: 502 })),
+            19000,
+          );
+        }),
+    )
+    .mockImplementation(
+      (_url, options) =>
+        new Promise((_resolve, reject) => {
+          options.signal.addEventListener(
+            "abort",
+            () => reject(options.signal.reason),
+            { once: true },
+          );
+        }),
+    );
+  vi.stubGlobal("fetch", fetch);
+  let outcome: unknown;
+  void request("/notes", z.array(z.string())).catch((error) => {
+    outcome = error;
+  });
+  try {
+    await vi.advanceTimersByTimeAsync(20001);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(outcome).toMatchObject({ code: "request_timeout" });
+  } finally {
+    await vi.runAllTimersAsync();
+    deadline.mockRestore();
+    vi.useRealTimers();
+  }
+});
 it("distinguishes definitive model failures from an unknown interrupted outcome", () => {
   expect(
     modelFailureState(new ClientError("Bad format", 415, "unsupported_audio")),

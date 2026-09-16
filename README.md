@@ -45,6 +45,8 @@ The library filter searches titles and the first 140 characters of each loaded n
 
 Recovery identifies the provider and mode stored with each recording. Changing the recording bar affects the next recording only. Unsupported or oversized audio is retained for download, with no unchanged upload offered. Configuration failures explain the setup step and require your acknowledgement before retrying. Later successful saves and reopening a cloud note also confirm the matching local recording, even if its working text has since changed.
 
+The recovery space includes recordings and completed transcripts held only in the current tab. Saving on this device is confirmed only after the local transaction completes. Cancel is available during transcription; saving the resulting transcript is a separate, non-cancelable step. Concurrent tabs claim recording attempts atomically, so an older result cannot overwrite a newer attempt or its cloud confirmation.
+
 ## Checks
 
 - `npm test`: deterministic tests without live provider or cloud calls.
@@ -58,6 +60,8 @@ On Windows, process-exit checks run normally; the two POSIX signal-forwarding te
 `npm run format` formats source, scripts, tests, and configuration. SQL migrations are immutable once applied. Add a new migration for schema changes. LF line endings keep migration checksums stable across operating systems.
 
 Database operations share a 12-second deadline per operation and follow client cancellation. A timed-out write may already have completed remotely, so retry it manually; note IDs and revision checks preserve the existing replay rules. Non-timeout data failures may retry once with the same payload. Missing database tables produce the migration instruction instead of a generic connection error.
+
+Both attempts of a data request share one 20-second client deadline. A retry does not restart that deadline.
 
 ## Data and limits
 

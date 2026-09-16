@@ -34,16 +34,18 @@ export async function request<T>(
         ? undefined
         : JSON.stringify(options.body);
   const operation = options.operation ?? (method === "GET" ? "read" : "write");
+  const signal = AbortSignal.any([
+    AbortSignal.timeout(operation === "model" ? 150000 : 20000),
+    ...(options.signal ? [options.signal] : []),
+  ]);
   for (let attempt = 0; ; attempt++) {
     try {
+      signal.throwIfAborted();
       const response = await fetch(`/api${path}`, {
         method,
         body,
         cache: "no-store",
-        signal: AbortSignal.any([
-          AbortSignal.timeout(operation === "model" ? 150000 : 20000),
-          ...(options.signal ? [options.signal] : []),
-        ]),
+        signal,
         headers: {
           "X-Voice-Workbench": "1",
           ...(body && !(body instanceof FormData)

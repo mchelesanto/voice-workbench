@@ -4,6 +4,7 @@ import {
   recordingConfirmation,
   recordingRecovery,
   selectLocalRecording,
+  recordingProgress,
 } from "../src/client/recording-recovery";
 import type { Note } from "../src/shared/contracts";
 
@@ -16,6 +17,38 @@ const input = {
   mode: "smart" as const,
   durationMs: 1000,
 };
+
+it.each([
+  "saving_audio",
+  "saving_transcript",
+  "saving_note",
+  "transcribing",
+] as const)(
+  "never claims device durability before confirmation during %s",
+  (phase) => {
+    expect(recordingProgress(phase, false).detail).toContain(
+      "Only in this tab",
+    );
+    expect(recordingProgress(phase, false).detail).not.toContain(
+      "saved on this device",
+    );
+  },
+);
+it("offers cancellation only while a model request is active", () => {
+  expect(recordingProgress("transcribing", true).canCancel).toBe(true);
+  for (const phase of [
+    "saving_audio",
+    "saving_transcript",
+    "saving_note",
+    "idle",
+  ] as const)
+    expect(recordingProgress(phase, false).canCancel).toBe(false);
+});
+it("offers only export for a superseded RAM result", () => {
+  expect(recordingRecovery({ ...recording, superseded: true }).action).toBe(
+    "none",
+  );
+});
 const recording: Recording = {
   kind: "recording",
   id: "11111111-1111-4111-8111-111111111111",

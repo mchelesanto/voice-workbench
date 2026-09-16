@@ -1,6 +1,8 @@
 import { LIMITS, type Note } from "../shared/contracts";
 import { classifyCreateReplay } from "../shared/responses";
 import type { Recording } from "./local-store";
+export const recordingConflictMessage =
+  "This tab's version no longer matches device storage. Copy or download it before discarding this tab's copy.";
 
 // Confirm only the stored processing result, never a newer processing attempt.
 export function recordingConfirmation(
@@ -28,6 +30,12 @@ export function recordingRecovery(row: Recording): {
   hint?: string;
   setupPrompt?: string;
 } {
+  if (row.superseded)
+    return {
+      action: "none",
+      label: "",
+      hint: recordingConflictMessage,
+    };
   if (row.state === "cloud_confirmed") return { action: "none", label: "" };
   if (row.result)
     return { action: "save", label: "Save transcript to library" };
@@ -118,5 +126,38 @@ export function selectLocalRecording(
     if (current.id !== stored.id) return;
     return { recording: current, durable: false };
   }
-  return { recording: stored, durable: true };
+  return { recording: stored, durable: stored.durable !== false };
+}
+
+export function sameRecordingSnapshot(a: Recording, b: Recording) {
+  return (
+    a.id === b.id &&
+    a.attemptId === b.attemptId &&
+    a.state === b.state &&
+    a.result?.originalText === b.result?.originalText
+  );
+}
+export type RecordingPhase =
+  | "idle"
+  | "saving_audio"
+  | "transcribing"
+  | "saving_transcript"
+  | "saving_note";
+export function recordingProgress(phase: RecordingPhase, durable: boolean) {
+  return {
+    title:
+      phase === "transcribing"
+        ? "Transcribing new note"
+        : phase === "saving_note"
+          ? "Saving note"
+          : phase === "saving_transcript"
+            ? "Saving transcript"
+            : "Saving recording",
+    detail: durable
+      ? phase === "saving_note"
+        ? "Transcript saved on this device. Syncing to cloud."
+        : "Audio saved on this device."
+      : "Only in this tab until device storage confirms. Keep it open.",
+    canCancel: phase === "transcribing",
+  };
 }

@@ -30,6 +30,10 @@
 
 ### Fixed
 
+- Include live audio and completed in-memory transcripts in recovery, with truthful storage and cancellation states.
+- Prevent older transcription attempts in another tab from overwriting newer recording results.
+- Share one client deadline across both attempts of a data request.
+
 - Bound storage operations and their HTTP transport with isolated request cancellation and explicit timeout outcomes.
 - Retry retryable or unreadable non-timeout data 5xx responses once, keeping configuration and schema failures manual, and diagnose missing tables without exposing database errors.
 
