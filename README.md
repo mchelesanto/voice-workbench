@@ -34,7 +34,8 @@ Credentials belong exclusively in the ignored `.env.local`. The launcher rejects
 
 ## Working with your voice
 
-- **Record:** Choose a provider and transcription mode, then start. Each recording becomes a new note. Recording stops at ten minutes or the byte limit.
+- **Record:** Choose a provider and transcription mode, then start. A focused capture view shows elapsed time and a real microphone level. **Stop & transcribe** finishes the recording; **Cancel recording** asks before discarding it without transcription. Each completed recording becomes a new note. Recording stops at ten minutes or the byte limit. If you are deciding whether to discard at that point, nothing is sent until you explicitly keep or discard the finished audio.
+- **Import:** Use **Import audio** to select or drop one MP3, M4A/MP4, WAV, WebM, or Ogg/Opus file. Preview it and choose the provider/mode before **Transcribe**. Selecting or canceling a file sends nothing. Files must be readable by the browser, at most 25 MiB, and no longer than ten minutes. The original file is unchanged; the browser secures a local copy before upload.
 - **Write:** Edit the title and working text. The initial transcription remains unchanged. Edits are saved locally before cloud writes.
 - **Refine:** Ask GLM 5.3 Flash through Fireworks to clean up, structure, or translate your text into English. Compare the exact input with the suggestion, then explicitly apply it. Undo restores the previous working version within the current editor session. If you edit again, that previous version remains available to copy without overwriting the newer work. A changed source makes an older suggestion ineligible for application.
 - **Recover:** Open **Local audio & drafts** to recover completed recordings and pending drafts. Drafts from separate tabs are preserved independently and grouped by note. Unsaved text still held in the current tab appears here even if browser storage is unavailable; **Open draft** reopens that live version without waiting for the cloud. Copy or download in-memory-only text before closing or reloading. A confirmed restoration retires its exact source snapshot, preserving newer edits. A local-only save retry never starts a model request. If local storage rejects a finished transcript, it remains visible for copying or Markdown download.
@@ -78,6 +79,7 @@ This is a local single-user application, without authentication against other pr
 ## Technical reference
 
 - `docs/design/voice-workbench.md`: API, storage, recovery, and interaction contracts.
+- `docs/design/audio-entry.md`: capture focus, discard confirmation, and audio import behavior.
 - `docs/adr/0001-local-next-and-shared-turso.md`: runtime and persistence decision.
 - `src/shared/contracts.ts` and `src/shared/responses.ts`: shared validation, response, and retry contracts.
 

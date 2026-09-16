@@ -11,6 +11,7 @@ import {
 import { z } from "zod";
 import {
   ArrowDownToLine,
+  Upload,
   ArrowRight,
   AudioLines,
   Check,
@@ -79,7 +80,11 @@ import {
 } from "./local-store";
 import { download, duration, exportNote } from "./export";
 import { useRecorder } from "./use-recorder";
-import { prepareAudioPlayback, playbackSourceKey } from "./audio-playback";
+import { RecordingDialog } from "./recording-dialog";
+import { ImportDialog } from "./import-dialog";
+import { audioExtension } from "../shared/audio-format";
+import { playbackSourceKey } from "./audio-playback";
+import { AudioPlayer, type PlaybackDuration } from "./audio-player";
 import {
   recordingConfirmation,
   recordingRecovery,
@@ -184,80 +189,6 @@ function Modal({
     </dialog>
   );
 }
-type PlaybackDuration = { sourceKey: string; durationMs: number };
-function AudioPlayer({
-  blob,
-  sourceKey,
-  onDuration,
-}: {
-  blob: Blob;
-  sourceKey: string;
-  onDuration: (result: PlaybackDuration) => void;
-}) {
-  const ref = useRef<HTMLAudioElement>(null);
-  const [sourceBlob] = useState(blob);
-  const [status, setStatus] = useState<"preparing" | "ready" | "error">(
-    "preparing",
-  );
-  useEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-    const controller = new AbortController();
-    const url = URL.createObjectURL(sourceBlob);
-    let released = false;
-    const release = () => {
-      if (released) return;
-      released = true;
-      element.removeEventListener("error", fail);
-      element.pause();
-      element.removeAttribute("src");
-      element.load();
-      URL.revokeObjectURL(url);
-    };
-    const fail = () => {
-      if (controller.signal.aborted) return;
-      setStatus("error");
-      controller.abort();
-      release();
-    };
-    element.addEventListener("error", fail);
-    element.src = url;
-    void prepareAudioPlayback(element, controller.signal)
-      .then((seconds) => {
-        if (controller.signal.aborted) return;
-        if (element.error) return fail();
-        onDuration({ sourceKey, durationMs: seconds * 1000 });
-        setStatus("ready");
-      })
-      .catch(fail);
-    return () => {
-      controller.abort();
-      release();
-    };
-  }, [sourceBlob, sourceKey, onDuration]);
-  return (
-    <>
-      <audio
-        ref={ref}
-        controls={status === "ready"}
-        style={status === "ready" ? undefined : { display: "none" }}
-        preload="auto"
-        aria-label="Play this local recording"
-      />
-      {status === "preparing" && (
-        <p className="field-hint" role="status">
-          Preparing playback…
-        </p>
-      )}
-      {status === "error" && (
-        <p className="notice" role="status">
-          This recording could not be played here. Download the audio to try
-          another player.
-        </p>
-      )}
-    </>
-  );
-}
 export function Workbench() {
   const [playbackDuration, setPlaybackDuration] =
     useState<PlaybackDuration | null>(null);
@@ -270,6 +201,8 @@ export function Workbench() {
   const [toast, setToast] = useState("");
   const [query, setQuery] = useState("");
   const [active, setActive] = useState<EditorSession | null>(null);
+  const [captureOpen, setCaptureOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [provider, setProvider] = useState<Provider>("google");
   const [mode, setMode] = useState<Mode>("verbatim");
   const [panel, setPanel] = useState<
@@ -530,13 +463,7 @@ export function Workbench() {
         setRecording(pending);
         setRecordingPhase("transcribing");
         const form = new FormData();
-        const essence = pending.mime.split(";")[0];
-        const extension =
-          essence === "audio/mp4"
-            ? "m4a"
-            : essence === "audio/ogg"
-              ? "ogg"
-              : "webm";
+        const extension = audioExtension(pending.mime);
         form.set("audio", pending.blob, `recording.${extension}`);
         form.set("provider", pending.provider);
         form.set("mode", pending.mode);
@@ -636,7 +563,8 @@ export function Workbench() {
     },
     [settings, createFromRecording, refreshLocal],
   );
-  const recorder = useRecorder((item, damaged) => {
+  const receiveAudio = (item: Recording, damaged = false) => {
+    setCaptureOpen(false);
     openTicket.current++;
     setOpening(false);
     setRecording(item);
@@ -655,9 +583,16 @@ export function Workbench() {
         .catch((e) => setError(message(e)))
         .finally(() => setLocalActionBusy(false));
     } else void transcribe(item, true);
-  });
+  };
+  const recorder = useRecorder(receiveAudio);
   const locked = recorder.phase !== "idle" || processing || localActionBusy;
   const beginRecording = () => {
+    if (
+      locked ||
+      !settings ||
+      !config?.providers.find((item) => item.id === provider)?.available
+    )
+      return;
     if (recording && !recordingDurable) {
       setError(
         "Save this recording on this device first. Or download a backup, then remove this in-memory copy to continue.",
@@ -666,8 +601,7 @@ export function Workbench() {
     }
     openTicket.current++;
     setOpening(false);
-    setActive(null);
-    setRecording(null);
+    setCaptureOpen(true);
     void recorder.start(provider, mode);
   };
   useEffect(() => {
@@ -807,10 +741,9 @@ export function Workbench() {
     }
   }
   function audioDownload(item: Recording) {
-    const type = item.mime.split(";")[0];
     download(
       item.blob,
-      `recording-${item.createdAt.replace(/[:.]/g, "-")}.${type === "audio/mp4" ? "m4a" : type === "audio/ogg" ? "ogg" : "webm"}`,
+      `recording-${item.createdAt.replace(/[:.]/g, "-")}.${audioExtension(item.mime)}`,
     );
   }
   const records = mergeLocalRecords(local, [
@@ -962,16 +895,28 @@ export function Workbench() {
       </div>
       <button
         className="new-note"
-        disabled={locked || (!!recording && !recordingDurable)}
+        disabled={
+          locked ||
+          !settings ||
+          !config?.providers.find((item) => item.id === provider)?.available ||
+          (!!recording && !recordingDurable)
+        }
         onClick={() => {
-          openTicket.current++;
-          setOpening(false);
-          setActive(null);
           setPanel(null);
-          if (recordingDurable) setRecording(null);
+          beginRecording();
         }}
       >
         <Plus size={19} /> New recording <span>＋</span>
+      </button>
+      <button
+        className="import-entry"
+        disabled={locked || (!!recording && !recordingDurable)}
+        onClick={() => {
+          setPanel(null);
+          setImportOpen(true);
+        }}
+      >
+        <Upload size={17} /> Import audio
       </button>
       <div className="library-title">
         <h2>Your notes</h2>
@@ -1024,7 +969,7 @@ export function Workbench() {
             <small>
               {query
                 ? "Only loaded titles and previews are searched."
-                : "Your first note starts with your voice."}
+                : "Record a thought or import your audio."}
             </small>
           </div>
         ) : (
@@ -1284,6 +1229,14 @@ export function Workbench() {
                   </span>
                 </div>
               </div>
+              <button
+                className="empty-import"
+                disabled={locked || (!!recording && !recordingDurable)}
+                onClick={() => setImportOpen(true)}
+              >
+                <Upload size={17} /> Or import an audio file{" "}
+                <ArrowRight size={15} />
+              </button>
               <div className="empty-footer">
                 <span>
                   <Headphones size={16} /> Your voice. Your pace.
@@ -1456,6 +1409,7 @@ export function Workbench() {
           )}
         </div>
         <footer
+          style={captureOpen ? { visibility: "hidden" } : undefined}
           className={`recording-dock ${locked ? "dock-busy" : ""} ${recorder.phase === "recording" ? "dock-recording" : ""}`}
         >
           <div className="dock-detail">
@@ -1570,6 +1524,32 @@ export function Workbench() {
           <Check size={17} />
           {toast}
         </div>
+      )}
+      {captureOpen && (
+        <RecordingDialog
+          state={recorder}
+          stop={recorder.stop}
+          requestDiscard={recorder.requestDiscard}
+          keep={recorder.keepRecording}
+          discard={() => {
+            recorder.discard();
+            setCaptureOpen(false);
+          }}
+          retry={() => void recorder.start(recorder.provider, recorder.mode)}
+        />
+      )}
+      {importOpen && (
+        <ImportDialog
+          config={config}
+          settingsReady={!!settings}
+          provider={provider}
+          mode={mode}
+          close={() => setImportOpen(false)}
+          transcribe={(item) => {
+            setImportOpen(false);
+            receiveAudio(item);
+          }}
+        />
       )}
       {panel === "library" && (
         <Modal title="Your library" close={() => setPanel(null)}>

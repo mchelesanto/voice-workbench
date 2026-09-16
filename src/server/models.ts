@@ -4,6 +4,7 @@ import { createGoogle } from "@ai-sdk/google";
 import { createMistral } from "@ai-sdk/mistral";
 import { transcribe } from "ai";
 import { fireworksText, type TextRequest } from "./fireworks";
+import { detectedAudioMime } from "../shared/audio-format";
 import type { RuntimeConfig } from "./config";
 import { ApiError, type ErrorCode } from "./errors";
 import { untilAborted, type ModelLease } from "./model-slots";
@@ -123,10 +124,23 @@ export function createModels(
       const provider = input.provider === "google" ? google : mistral;
       if (!provider) throw new ApiError("provider_unavailable");
       const model = provider.transcription(PROVIDERS[input.provider].model);
+      const mediaType = detectedAudioMime(input.audio);
+      // The SDK's own short-prefix sniff can miss MP3 after a large ID3 tag.
+      // Preserve the original bytes and supply our already validated MIME.
+      const typedModel: typeof model = {
+        specificationVersion: model.specificationVersion,
+        provider: model.provider,
+        modelId: model.modelId,
+        doGenerate: (options) =>
+          model.doGenerate({
+            ...options,
+            mediaType: mediaType ?? options.mediaType,
+          }),
+      };
       const result = await callProvider(
         (abortSignal) =>
           transport.transcribe({
-            model,
+            model: typedModel,
             audio: input.audio,
             providerOptions:
               input.provider === "google"
