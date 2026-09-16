@@ -2241,8 +2241,8 @@ function Editor({
       <details className="original">
         <summary>
           <FileText size={16} />
-          <span>Original transcript</span>
-          <span className="original-hint">Always preserved</span>
+          <span>Initial transcription</span>
+          <span className="original-hint">· Kept unchanged</span>
           <ChevronDown size={16} />
         </summary>
         <pre>{draft.input.originalText}</pre>
@@ -2250,7 +2250,7 @@ function Editor({
           className="text-button"
           onClick={() => void copy(draft.input.originalText)}
         >
-          Copy original
+          Copy initial transcription
         </button>
       </details>
       {enhanceOpen && (

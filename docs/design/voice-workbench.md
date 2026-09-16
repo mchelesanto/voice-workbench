@@ -8,6 +8,8 @@ Der Nutzer öffnet die Arbeitsfläche auf localhost:3210, nimmt einen Gedanken a
 
 Eine Aufzeichnung entspricht einer Notiz; zusätzliche Aufnahmen erzeugen neue Notizen. Kein Einfügen in bewegliche Cursorpositionen während einer laufenden Anfrage. Keine globalen Tastenkürzel, kein automatisches Ausführen von Spracheingaben. Kopieren und Markdown-Download sind die Übergabe.
 
+Die UI nennt die unveränderliche erste Providerantwort „Initial transcription · Kept unchanged“, mit „Copy initial transcription“ als Kopieraktion. Diese Fassung ist bei Google-Smart bereits geglättet; eine zusätzliche wortgetreue Fassung wird nicht erzeugt. Die Beschriftung verspricht unveränderte Aufbewahrung dieser Antwort, keine wortgetreue Wiedergabe der Audioquelle. Auch Verbatim kann Erkennungsfehler enthalten. Die technischen Ursprungsfelder und vorhandenen Notizen bleiben unverändert.
+
 ## Referenzfälle
 
 - R1: Deutsches Agenten-Briefing mit englischen Fachbegriffen und Negationen, Original und bearbeitbare Fassung erhalten.

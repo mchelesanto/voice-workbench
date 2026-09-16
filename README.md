@@ -2,7 +2,9 @@
 
 A personal workspace for thinking out loud, shaping your words, and keeping notes across computers.
 
-Record a thought, keep the original transcript, and refine a separate working version. Your notes and vocabulary live in your own Turso database. Audio and recovery drafts stay in your browser.
+Record a thought, keep the initial transcription, and refine a separate working version. Your notes and vocabulary live in your own Turso database. Audio and recovery drafts stay in your browser.
+
+**Initial transcription · Kept unchanged** preserves the first text returned by the transcription provider. With Polished mode, that text is already polished; a separate verbatim transcript is not generated. The audio recording is the source, and even Verbatim mode may contain transcription errors.
 
 ## Project status
 
@@ -33,7 +35,7 @@ Credentials belong exclusively in the ignored `.env.local`. The launcher rejects
 ## Working with your voice
 
 - **Record:** Choose a provider and transcription mode, then start. Each recording becomes a new note. Recording stops at ten minutes or the byte limit.
-- **Write:** Edit the title and working text. The original transcript remains unchanged. Edits are saved locally before cloud writes.
+- **Write:** Edit the title and working text. The initial transcription remains unchanged. Edits are saved locally before cloud writes.
 - **Refine:** Ask GLM 5.3 Flash through Fireworks to clean up, structure, or translate your text into English. Compare the exact input with the suggestion, then explicitly apply it. Undo restores the previous working version within the current editor session. If you edit again, that previous version remains available to copy without overwriting the newer work. A changed source makes an older suggestion ineligible for application.
 - **Recover:** Open **Local audio & drafts** to recover completed recordings and pending drafts. Drafts from separate tabs are preserved independently and grouped by note. Unsaved text still held in the current tab appears here even if browser storage is unavailable; **Open draft** reopens that live version without waiting for the cloud. Copy or download in-memory-only text before closing or reloading. A confirmed restoration retires its exact source snapshot, preserving newer edits. A local-only save retry never starts a model request. If local storage rejects a finished transcript, it remains visible for copying or Markdown download.
 - **Resolve:** Concurrent edits show both versions. Choose explicitly; the application never silently overwrites another version.

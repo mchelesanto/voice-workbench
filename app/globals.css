@@ -1862,7 +1862,7 @@ pre {
     display: none;
   }
   .original-hint {
-    display: none;
+    margin-left: 0;
   }
   .original summary {
     font-size: 13px;
