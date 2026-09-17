@@ -42,7 +42,6 @@ import {
   createNoteSchema,
   noteSchema,
   settingsSchema,
-  vocabularySchema,
   type CreateNote,
   type Mode,
   type NotePage,
@@ -57,6 +56,7 @@ import {
   notePageSchema,
   transcriptionResultSchema,
   classifySettingsConflict,
+  sameVocabularyTerms,
   classifyCreateReplay,
   type AppConfig,
 } from "../shared/responses";
@@ -84,6 +84,13 @@ import { useRecorder } from "./use-recorder";
 import { RecordingDialog } from "./recording-dialog";
 import { ImportDialog } from "./import-dialog";
 import { ProcessingStatus } from "./processing-status";
+import { VocabularyEditor } from "./vocabulary-editor";
+import {
+  prepareVocabularySave,
+  hasPendingVocabulary,
+  sortedVocabulary,
+  type VocabularyInput,
+} from "./vocabulary-input";
 import { audioExtension } from "../shared/audio-format";
 import { playbackSourceKey } from "./audio-playback";
 import { AudioPlayer, type PlaybackDuration } from "./audio-player";
@@ -144,11 +151,13 @@ function Modal({
   children,
   close,
   wide = false,
+  className = "",
 }: {
   title: string;
   children: ReactNode;
   close: () => void;
   wide?: boolean;
+  className?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -163,7 +172,7 @@ function Modal({
     <dialog
       ref={ref}
       aria-labelledby={titleId}
-      className={`modal ${wide ? "modal-wide" : ""}`}
+      className={`modal ${wide ? "modal-wide" : ""} ${className}`}
       onCancel={(event) => {
         event.preventDefault();
         close();
@@ -1635,12 +1644,13 @@ export function Workbench() {
       )}
       {panel === "settings" && (
         <SettingsPanel
+          key={settings ? "ready" : "waiting"}
           config={config}
           initial={settings}
           close={() => setPanel(null)}
-          onSaved={(value) => {
+          onSaved={(value, notice) => {
             setSettings(value);
-            setToast("Vocabulary saved.");
+            setToast(notice);
           }}
         />
       )}
@@ -2551,154 +2561,228 @@ function SettingsPanel({
   config: AppConfig | null;
   initial: Settings | null;
   close: () => void;
-  onSaved: (s: Settings) => void;
+  onSaved: (s: Settings, notice: string) => void;
 }) {
-  const [text, setText] = useState(initial?.vocabulary.join("\n") ?? "");
+  const [value, setValue] = useState<VocabularyInput>({
+    terms: initial?.vocabulary ?? [],
+    pending: "",
+    error: "",
+    announcement: "",
+  });
   const [base, setBase] = useState(initial);
   const [conflict, setConflict] = useState<Settings | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  async function save() {
-    if (!base || busy) return;
-    const result = vocabularySchema.safeParse(
-      text.split("\n").filter((s) => s.trim()),
-    );
-    if (!result.success) {
-      setError(
-        "Use up to 100 terms, each at most 80 characters. One per line, without commas or control characters.",
-      );
-      return;
+  const saving = useRef(false);
+  const conflictPanel = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (conflict) {
+      conflictPanel.current?.focus();
+      conflictPanel.current?.scrollIntoView({ block: "nearest" });
     }
-    const body = { vocabulary: result.data, expectedRevision: base.revision };
-    setBusy(true);
+  }, [conflict]);
+  const dirty =
+    hasPendingVocabulary(value.pending) ||
+    !sameVocabularyTerms(value.terms, base?.vocabulary ?? []);
+  useEffect(() => {
+    if (!dirty && !busy) return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty, busy]);
+  function accept(saved: Settings, notice = "Vocabulary saved.") {
+    setBase(saved);
+    setValue({
+      terms: saved.vocabulary,
+      pending: "",
+      error: "",
+      announcement: notice,
+    });
+    setConflict(null);
+    onSaved(saved, notice);
+  }
+  function closePanel() {
+    if (saving.current) return;
+    if (dirty && !window.confirm("Discard unsaved vocabulary changes?")) return;
+    close();
+  }
+  async function save() {
+    if (!base || saving.current || conflict) return;
+    const { value: committed, write: body } = prepareVocabularySave(
+      value.terms,
+      value.pending,
+      base,
+    );
+    setValue(committed);
     setError("");
+    if (!body) return;
+    saving.current = true;
+    setBusy(true);
     try {
-      const saved = await request("/settings", settingsSchema, {
-        method: "PUT",
-        body,
-      });
-      setBase(saved);
-      setText(saved.vocabulary.join("\n"));
-      setConflict(null);
-      onSaved(saved);
+      accept(
+        await request("/settings", settingsSchema, { method: "PUT", body }),
+      );
     } catch (e) {
       if (e instanceof ClientError && e.current && "vocabulary" in e.current) {
-        if (classifySettingsConflict(body, e.current) === "confirmed") {
-          setBase(e.current);
-          setText(e.current.vocabulary.join("\n"));
-          onSaved(e.current);
-          setConflict(null);
-        } else setConflict(e.current);
+        if (classifySettingsConflict(body, e.current) === "confirmed")
+          accept(e.current);
+        else setConflict(e.current);
       } else setError(message(e));
     } finally {
+      saving.current = false;
       setBusy(false);
     }
   }
   return (
     <Modal
       title="Words that sound like you."
-      close={() => {
-        if (busy) return;
-        if (
-          text !== (base?.vocabulary.join("\n") ?? "") &&
-          !window.confirm("Discard unsaved vocabulary changes?")
-        )
-          return;
-        close();
-      }}
+      close={closePanel}
+      className="vocabulary-settings"
     >
-      <p className="modal-intro">
-        Names, specialist terms, and your own spellings help the models
-        understand you.
-      </p>
-      {!base && (
-        <p className="notice">
-          Vocabulary is not available yet. Close this panel and check the
-          connection.
+      <div className="vocabulary-settings-content">
+        <p className="modal-intro">
+          Names, projects and your own spellings. Included in every new
+          recording.
         </p>
-      )}
-      <label className="field-label" htmlFor="vocabulary">
-        Your vocabulary <span>One term per line</span>
-      </label>
-      <textarea
-        id="vocabulary"
-        className="vocabulary"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder={"For example:\nProject name\nSpecialist term"}
-        disabled={busy || !base}
-      />
-      <p className="field-hint">
-        Up to 100 terms. When sent to Mistral, spaces within a term are
-        converted to underscores.
-      </p>
-      {error && (
-        <p className="notice" role="alert">
-          {error}
-        </p>
-      )}
-      {conflict && (
-        <div className="conflict-panel">
-          <h3>Your vocabulary was changed elsewhere.</h3>
-          <pre>{conflict.vocabulary.join("\n") || "Empty vocabulary"}</pre>
-          <div className="button-row">
-            <button
-              className="secondary"
-              onClick={() => {
-                setBase(conflict);
-                setConflict(null);
-              }}
-            >
-              Keep my terms and unlock saving
-            </button>
-            <button
-              className="text-button"
-              onClick={() => {
-                setText(conflict.vocabulary.join("\n"));
-                setBase(conflict);
-                setConflict(null);
-              }}
-            >
-              Use the other version
-            </button>
-          </div>
-        </div>
-      )}
-      <div className="modal-actions">
-        <span className="modal-footnote">Shared across your computers.</span>
-        <button
-          className="primary"
-          disabled={busy || !base || !!conflict}
-          onClick={() => void save()}
-        >
-          {busy ? (
-            <LoaderCircle className="spin" size={16} />
-          ) : (
-            <Check size={16} />
-          )}{" "}
-          Save vocabulary
-        </button>
+        {!base && (
+          <p className="notice">
+            Vocabulary is not available yet. Close this panel and check the
+            connection.
+          </p>
+        )}
+        {conflict && (
+          <section
+            ref={conflictPanel}
+            tabIndex={-1}
+            className="conflict-panel vocabulary-conflict"
+            aria-label="Resolve vocabulary conflict"
+          >
+            <h3>Your vocabulary was changed elsewhere.</h3>
+            <p>
+              Your {value.terms.length} terms are kept. Review them, then save
+              to replace the other version. Or use the other version now.
+            </p>
+            <details>
+              <summary>
+                Other version · {conflict.vocabulary.length}{" "}
+                {conflict.vocabulary.length === 1 ? "term" : "terms"}
+              </summary>
+              {conflict.vocabulary.length ? (
+                <ul
+                  className="vocabulary-tags vocabulary-readonly"
+                  aria-label="Other vocabulary terms"
+                >
+                  {sortedVocabulary(conflict.vocabulary).map((term) => (
+                    <li key={term}>
+                      <span>{term}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p>Empty vocabulary</p>
+              )}
+            </details>
+          </section>
+        )}
+        {!conflict && (
+          <>
+            <VocabularyEditor
+              value={value}
+              onChange={setValue}
+              disabled={busy || !base}
+            />
+            {error && (
+              <p className="notice" role="alert">
+                {error}
+              </p>
+            )}
+            <details className="vocabulary-models">
+              <summary>
+                Your models <ChevronDown size={15} aria-hidden="true" />
+              </summary>
+              <div className="provider-overview">
+                {config?.providers.map((p) => (
+                  <div key={p.id}>
+                    <span>
+                      {p.label}
+                      <small>{p.model}</small>
+                    </span>
+                    <span
+                      className={
+                        p.available ? "provider-ready" : "provider-missing"
+                      }
+                    >
+                      {p.available ? (
+                        <Check size={14} />
+                      ) : (
+                        <CircleHelp size={14} />
+                      )}
+                      {p.available ? "Connected" : "Not configured"}
+                    </span>
+                  </div>
+                ))}
+                <p className="field-hint">
+                  Select a provider in the recording bar. Credentials stay in
+                  your local project configuration. Mistral receives spaces
+                  within a term as underscores.
+                </p>
+              </div>
+            </details>
+          </>
+        )}
       </div>
-      <div className="provider-overview">
-        <h3>Your models</h3>
-        {config?.providers.map((p) => (
-          <div key={p.id}>
-            <span>
-              {p.label}
-              <small>{p.model}</small>
+      <div className="modal-actions">
+        {conflict ? (
+          <>
+            <div className="vocabulary-conflict-actions">
+              <button
+                type="button"
+                className="primary"
+                onClick={() => {
+                  setBase(conflict);
+                  setConflict(null);
+                }}
+              >
+                Review terms
+              </button>
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => {
+                  if (
+                    !window.confirm(
+                      "Replace your unsaved vocabulary with the other version?",
+                    )
+                  )
+                    return;
+                  accept(conflict, "Using the other vocabulary version.");
+                }}
+              >
+                Use other version
+              </button>
+            </div>
+            <p className="modal-footnote">Your changes are not saved.</p>
+          </>
+        ) : (
+          <>
+            <span className="modal-footnote">
+              {dirty ? "Unsaved changes" : "Saved across your computers"}
             </span>
-            <span
-              className={p.available ? "provider-ready" : "provider-missing"}
+            <button
+              type="button"
+              className="primary"
+              disabled={busy || !base || !dirty}
+              onClick={() => void save()}
             >
-              {p.available ? <Check size={14} /> : <CircleHelp size={14} />}
-              {p.available ? "Connected" : "Not configured"}
-            </span>
-          </div>
-        ))}
-        <p className="field-hint">
-          Select a provider in the recording bar. Credentials stay in your local
-          project configuration.
-        </p>
+              {busy ? (
+                <LoaderCircle className="spin" size={16} />
+              ) : (
+                <Check size={16} />
+              )}
+              {busy ? "Saving vocabulary" : "Save vocabulary"}
+            </button>
+          </>
+        )}
       </div>
     </Modal>
   );

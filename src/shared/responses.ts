@@ -140,12 +140,20 @@ export function classifyEditConflict(
     ? "confirmed"
     : "conflict";
 }
+export function sameVocabularyTerms(local: string[], remote: string[]) {
+  const canonical = normalizeVocabulary(local);
+  const other = new Set(normalizeVocabulary(remote));
+  return (
+    canonical.length === other.size &&
+    canonical.every((term) => other.has(term))
+  );
+}
+
 export function classifySettingsConflict(
   input: SettingsEdit,
   current: Settings,
 ): "confirmed" | "conflict" {
-  return JSON.stringify(normalizeVocabulary(input.vocabulary)) ===
-    JSON.stringify(current.vocabulary)
+  return sameVocabularyTerms(input.vocabulary, current.vocabulary)
     ? "confirmed"
     : "conflict";
 }

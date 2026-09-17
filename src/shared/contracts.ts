@@ -62,10 +62,13 @@ export const revisionSchema = z
   .int()
   .min(1)
   .max(Number.MAX_SAFE_INTEGER);
+export function isVocabularyTermTextAllowed(value: string) {
+  return !/[\u0000-\u001f\u007f-\u009f,]/u.test(value);
+}
 const word = z
   .string()
   .max(LIMITS.maxVocabularyTermLength)
-  .refine((s) => !/[\u0000-\u001f\u007f-\u009f,]/u.test(s))
+  .refine(isVocabularyTermTextAllowed)
   .transform((s) => s.trim().normalize("NFC"))
   .pipe(z.string().min(1).max(LIMITS.maxVocabularyTermLength));
 export const vocabularySchema = z

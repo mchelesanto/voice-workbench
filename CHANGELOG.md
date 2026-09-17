@@ -4,6 +4,8 @@
 
 ### Added
 
+- Alphabetical vocabulary tags with phrase input, bulk paste, accessible removal, and preservation of invalid or over-limit input.
+
 - Focused transcription status with the bound provider, elapsed time, real pipeline stages, cancellation, and backup downloads.
 
 - Focused microphone capture with live levels, explicit discard confirmation, and local audio-file import with preview.
@@ -35,6 +37,9 @@
 - Runtime messages, code comments, and test descriptions use English. Multilingual input remains supported.
 
 ### Fixed
+
+- Apply a selected remote vocabulary to subsequent recordings and unlock settings opened before their initial load completes.
+- Preserve rejected input across retries, confirm equal word sets regardless of stored order, and keep mobile conflict actions clear of their content.
 
 - Keep interrupted or over-duration captures local instead of automatically transcribing them.
 - Retry unavailable settings inside the import dialog without losing the selected file, with reachable actions on short screens.
