@@ -54,7 +54,13 @@ describe("Tagged MP3 format across the SDK boundary", () => {
       fireworksKey: "",
     });
     const result = await service.transcribe(
-      { audio, provider: "google", mode: "verbatim", vocabulary: [] },
+      {
+        generation: 1,
+        audio,
+        provider: "google",
+        mode: "verbatim",
+        vocabulary: [],
+      },
       new AbortController().signal,
     );
     expect(result.text).toBe("Synthetic tagged audio.");

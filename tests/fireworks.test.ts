@@ -179,7 +179,10 @@ describe("Fireworks refinement", () => {
       generateText: (args) => fireworksText(config.fireworksKey, args, fetcher),
     });
     const error = await service
-      .enhance({ text: input.prompt, preset: "clean" }, input.abortSignal)
+      .enhance(
+        { generation: 1, text: input.prompt, preset: "clean" },
+        input.abortSignal,
+      )
       .catch((e) => e);
     expect(error).toMatchObject({ code });
     expect(String(error)).not.toContain("fixture-fireworks");
@@ -237,7 +240,7 @@ describe("Fireworks refinement", () => {
     });
     expect(
       await available.enhance(
-        { text: input.prompt, preset: "clean" },
+        { generation: 1, text: input.prompt, preset: "clean" },
         input.abortSignal,
       ),
     ).toMatchObject({
@@ -250,7 +253,7 @@ describe("Fireworks refinement", () => {
     );
     await expect(
       missing.enhance(
-        { text: input.prompt, preset: "clean" },
+        { generation: 1, text: input.prompt, preset: "clean" },
         input.abortSignal,
       ),
     ).rejects.toMatchObject({ code: "provider_unavailable" });
@@ -273,7 +276,7 @@ describe("Fireworks refinement", () => {
       generateText: (args) => fireworksText(config.fireworksKey, args, fetcher),
     });
     const pending = service.enhance(
-      { text: input.prompt, preset: "clean" },
+      { generation: 1, text: input.prompt, preset: "clean" },
       controller.signal,
     );
     controller.abort();

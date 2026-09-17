@@ -22,6 +22,8 @@ describe("Exact contract boundaries", () => {
       const store = new Store(db),
         id = randomUUID();
       const data = {
+        generation: 1,
+        areaId: null,
         title: "Notiz",
         body: "Text",
         originalText: "Original",
@@ -33,15 +35,15 @@ describe("Exact contract boundaries", () => {
       await store.create(id, { ...data, body: "a".repeat(139) + "😀Z" });
       for (let i = 0; i < 50; i++) await store.create(randomUUID(), data);
       await db.execute(
-        "UPDATE notes SET updated_at='2026-02-01T00:00:00.000Z'",
+        "UPDATE library_notes SET updated_at='2026-02-01T00:00:00.000Z'",
       );
       await db.execute({
-        sql: "UPDATE notes SET updated_at='2026-01-01T00:00:00.000Z' WHERE id=?",
+        sql: "UPDATE library_notes SET updated_at='2026-01-01T00:00:00.000Z' WHERE id=?",
         args: [id],
       });
-      const first = await store.list();
+      const first = await store.list(1);
       expect(first.items).toHaveLength(50);
-      const next = await store.list(first.nextCursor!);
+      const next = await store.list(1, "all", first.nextCursor!);
       expect(next.items).toHaveLength(1);
       const text = next.items[0].preview;
       expect(text.isWellFormed()).toBe(true);
@@ -70,6 +72,7 @@ describe("Exact contract boundaries", () => {
       await expect(
         service.transcribe(
           {
+            generation: 1,
             provider: "google",
             mode: "verbatim",
             vocabulary: [],
@@ -80,7 +83,7 @@ describe("Exact contract boundaries", () => {
       ).rejects.toMatchObject({ code });
       await expect(
         service.enhance(
-          { text: "Text", preset: "clean" },
+          { generation: 1, text: "Text", preset: "clean" },
           new AbortController().signal,
         ),
       ).rejects.toMatchObject({ code });
@@ -115,9 +118,12 @@ describe("Exact contract boundaries", () => {
       model: "accounts/fireworks/models/glm-5p3-flash",
       preset: "clean",
     });
+    const db = createClient({ url: ":memory:" });
+    await migrate(db, "db/migrations");
+    const store = new Store(db);
     const api = createApi({
       getConfig: () => config,
-      getStore: vi.fn(),
+      getStore: () => store,
       getModels: () => ({ transcribe: vi.fn(), enhance }),
     });
     const request = (text: string) =>
@@ -129,7 +135,7 @@ describe("Exact contract boundaries", () => {
           "x-voice-workbench": "1",
           "content-type": "application/json",
         },
-        body: JSON.stringify({ text, preset: "clean" }),
+        body: JSON.stringify({ generation: 1, text, preset: "clean" }),
       });
     expect((await api(request("a".repeat(12000)))).status).toBe(200);
     expect((await api(request("😀".repeat(6000)))).status).toBe(200);
@@ -137,5 +143,6 @@ describe("Exact contract boundaries", () => {
     expect(over.status).toBe(400);
     expect((await over.json()).error.code).toBe("enhancement_input_too_long");
     expect(enhance).toHaveBeenCalledTimes(2);
+    db.close();
   });
 });

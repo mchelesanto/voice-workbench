@@ -22,6 +22,7 @@ const config = {
   fireworksKey: "fixture",
 };
 const input = {
+  generation: 1,
   provider: "google" as const,
   mode: "verbatim" as const,
   audio: new Uint8Array(44),
@@ -197,6 +198,8 @@ it("returns safe field paths without echoing invalid values", async () => {
 
 it("distinguishes confirmed replays from newer versions and different origins", () => {
   const input = {
+    generation: 1,
+    areaId: null,
     title: "Alt",
     body: "Alt",
     originalText: "Original",
@@ -224,14 +227,50 @@ it("distinguishes confirmed replays from newer versions and different origins", 
   ).toBe("different_origin");
   expect(
     classifyEditConflict(
-      { title: "Alt", body: "Alt", expectedRevision: 1 },
+      {
+        generation: 1,
+        areaId: null,
+        title: "Alt",
+        body: "Alt",
+        expectedRevision: 1,
+      },
       current,
     ),
   ).toBe("confirmed");
   expect(
     classifyEditConflict(
-      { title: "Alt", body: "Neu", expectedRevision: 1 },
+      {
+        generation: 1,
+        areaId: null,
+        title: "Alt",
+        body: "Neu",
+        expectedRevision: 1,
+      },
       current,
     ),
   ).toBe("conflict");
+});
+
+it("never confirms an edit conflict from another library generation", () => {
+  const edit = {
+    generation: 1,
+    areaId: null,
+    title: "Synthetic",
+    body: "Text",
+    expectedRevision: 1,
+  };
+  const current = {
+    ...edit,
+    generation: 2,
+    id: crypto.randomUUID(),
+    originalText: "Text",
+    provider: "google" as const,
+    model: "gemini-3.5-transcribe",
+    mode: "verbatim" as const,
+    durationMs: 1,
+    revision: 2,
+    createdAt: "2026-09-17T00:00:00.000Z",
+    updatedAt: "2026-09-17T00:00:00.000Z",
+  };
+  expect(classifyEditConflict(edit, current)).toBe("conflict");
 });

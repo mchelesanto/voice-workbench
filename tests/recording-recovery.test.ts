@@ -1,14 +1,16 @@
+import { captureIsReadOnly } from "../src/client/recording-recovery";
 import { expect, it } from "vitest";
 import type { Recording } from "../src/client/local-store";
 import {
   recordingConfirmation,
   recordingRecovery,
-  selectLocalRecording,
   recordingProgress,
 } from "../src/client/recording-recovery";
 import type { Note } from "../src/shared/contracts";
 
 const input = {
+  generation: 1,
+  areaId: null,
   title: "Original title",
   originalText: "Original words",
   body: "Original words",
@@ -19,7 +21,7 @@ const input = {
 };
 
 it.each([
-  "saving_audio",
+  "preparing_audio",
   "saving_transcript",
   "saving_note",
   "transcribing",
@@ -27,7 +29,7 @@ it.each([
   "never claims device durability before confirmation during %s",
   (phase) => {
     expect(recordingProgress(phase, false).detail).toContain(
-      "Only in this tab",
+      "temporary in this tab",
     );
     expect(recordingProgress(phase, false).detail).not.toContain(
       "saved on this device",
@@ -37,7 +39,7 @@ it.each([
 it("offers cancellation only while a model request is active", () => {
   expect(recordingProgress("transcribing", true).canCancel).toBe(true);
   for (const phase of [
-    "saving_audio",
+    "preparing_audio",
     "saving_transcript",
     "saving_note",
     "idle",
@@ -50,6 +52,11 @@ it("offers only export for a superseded RAM result", () => {
   );
 });
 const recording: Recording = {
+  generation: 1,
+  areaId: null,
+  areaLabel: "General",
+  vocabulary: [],
+  localResetId: null,
   kind: "recording",
   id: "11111111-1111-4111-8111-111111111111",
   blob: new Blob(["audio"]),
@@ -70,27 +77,6 @@ const note: Note = {
   createdAt: recording.createdAt,
   updatedAt: recording.createdAt,
 };
-
-it("opens consecutive durable recordings without clearing the selected audio", () => {
-  const other = { ...recording, id: "22222222-2222-4222-8222-222222222222" };
-  expect(selectLocalRecording(recording, true, other)).toEqual({
-    recording: other,
-    durable: true,
-  });
-});
-it("never replaces a RAM-only recording with another or a stale stored copy", () => {
-  const live = { ...recording, result: { ...input, body: "Only in RAM" } };
-  expect(
-    selectLocalRecording(live, false, {
-      ...recording,
-      id: "22222222-2222-4222-8222-222222222222",
-    }),
-  ).toBeUndefined();
-  expect(selectLocalRecording(live, false, recording)).toEqual({
-    recording: live,
-    durable: false,
-  });
-});
 
 it("confirms the recording origin after later edits without replacing its transcript", () => {
   const confirmed = recordingConfirmation(recording, note);
@@ -219,6 +205,11 @@ it("uses the recording provider for upload recovery rather than a global byte ca
     value: 80_000_000,
   });
   const base = {
+    generation: 1,
+    areaId: null,
+    areaLabel: "General",
+    vocabulary: [],
+    localResetId: null,
     kind: "recording",
     id: "11111111-1111-4111-8111-111111111111",
     createdAt: "2026-09-17T00:00:00.000Z",
@@ -238,6 +229,11 @@ it("uses the recording provider for upload recovery rather than a global byte ca
 
 it("retains over-duration audio without offering another unchanged upload", () => {
   const base = {
+    generation: 1,
+    areaId: null,
+    areaLabel: "General",
+    vocabulary: [],
+    localResetId: null,
     kind: "recording",
     id: "11111111-1111-4111-8111-111111111111",
     blob: new Blob(["audio"]),
@@ -256,4 +252,38 @@ it("retains over-duration audio without offering another unchanged upload", () =
   expect(recordingRecovery({ ...base, provider: "mistral" }).action).toBe(
     "transcribe",
   );
+});
+
+it("keeps a late quarantined clip read-only until the same generation is ready", () => {
+  const clip = { generation: 1, readOnly: true };
+  expect(
+    captureIsReadOnly(clip, {
+      generation: 1,
+      ready: true,
+      resetPending: false,
+    }),
+  ).toBe(false);
+  expect(
+    captureIsReadOnly(clip, {
+      generation: 2,
+      ready: true,
+      resetPending: false,
+    }),
+  ).toBe(true);
+  expect(
+    captureIsReadOnly(clip, {
+      generation: 1,
+      ready: false,
+      resetPending: false,
+    }),
+  ).toBe(true);
+  expect(
+    captureIsReadOnly(clip, { generation: 1, ready: true, resetPending: true }),
+  ).toBe(true);
+  expect(
+    captureIsReadOnly(
+      { generation: 1 },
+      { generation: 1, ready: false, resetPending: false },
+    ),
+  ).toBe(false);
 });

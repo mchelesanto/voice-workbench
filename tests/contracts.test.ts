@@ -7,6 +7,8 @@ import {
 import { validateAudio } from "../src/server/audio";
 import { ApiError } from "../src/server/errors";
 const note = {
+  generation: 1,
+  areaId: null,
   title: "Test",
   body: "Test",
   originalText: "Test",
@@ -16,6 +18,16 @@ const note = {
   durationMs: 1000,
 };
 describe("Validation contract", () => {
+  it("validates vocabulary capacity after trim and NFC while rejecting raw controls", () => {
+    expect(vocabularySchema.parse([" " + "a".repeat(80) + " "])).toEqual([
+      "a".repeat(80),
+    ]);
+    expect(vocabularySchema.parse(["e\u0301".repeat(80)])).toEqual([
+      "é".repeat(80),
+    ]);
+    expect(vocabularySchema.safeParse(["a".repeat(81)]).success).toBe(false);
+    expect(vocabularySchema.safeParse(["\tterm"]).success).toBe(false);
+  });
   it("rejects unknown fields and incompatible models", () => {
     expect(
       createNoteSchema.safeParse({ ...note, key: "ignored?" }).success,
@@ -47,6 +59,8 @@ describe("Validation contract", () => {
     for (const revision of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, "1"]) {
       expect(
         editSchema.safeParse({
+          generation: 1,
+          areaId: null,
           title: "A",
           body: "B",
           expectedRevision: revision,
@@ -58,7 +72,7 @@ describe("Validation contract", () => {
     expect(
       vocabularySchema.parse([" Café ", "Cafe\u0301", "Eigener Begriff"]),
     ).toEqual(["Café", "Eigener Begriff"]);
-    for (const terms of [[""], ["a,b"], ["a\nb"], Array(101).fill("a")])
+    for (const terms of [[""], ["a,b"], ["a\nb"], Array(1001).fill("a")])
       expect(vocabularySchema.safeParse(terms).success).toBe(false);
   });
 });

@@ -1,8 +1,8 @@
 import { PROVIDERS, type Note } from "../shared/contracts";
 import { classifyCreateReplay } from "../shared/responses";
-import type { Recording } from "./local-store";
+import type { Recording } from "./recording";
 export const recordingConflictMessage =
-  "This tab's version no longer matches device storage. Copy or download it before discarding this tab's copy.";
+  "This attempt is no longer current. Download the audio or copy its text before leaving.";
 
 // Confirm only the stored processing result, never a newer processing attempt.
 export function recordingConfirmation(
@@ -30,6 +30,12 @@ export function recordingRecovery(row: Recording): {
   hint?: string;
   setupPrompt?: string;
 } {
+  if (row.readOnly)
+    return {
+      action: "none",
+      label: "",
+      hint: "This earlier recording is read-only. Download its audio or copy its transcript.",
+    };
   if (row.superseded)
     return {
       action: "none",
@@ -96,6 +102,9 @@ export function recordingRecovery(row: Recording): {
   if (
     row.errorCode &&
     ![
+      "library_reset",
+      "storage_unavailable",
+      "storage_timeout",
       "request_too_fragmented",
       "request_timeout",
       "request_aborted",
@@ -123,21 +132,16 @@ export function recordingProvider(row: Recording) {
   return `${row.provider === "google" ? "Google" : "Mistral"} · ${row.mode === "smart" ? "Polished" : "Verbatim"}`;
 }
 
-export function selectLocalRecording(
-  current: Recording | null,
-  durable: boolean,
-  stored: Recording,
-) {
-  if (current && !durable) {
-    if (current.id !== stored.id) return;
-    return { recording: current, durable: false };
-  }
-  return { recording: stored, durable: stored.durable !== false };
-}
-
 export function sameRecordingSnapshot(a: Recording, b: Recording) {
   return (
     a.id === b.id &&
+    a.generation === b.generation &&
+    a.localResetId === b.localResetId &&
+    a.blob === b.blob &&
+    a.provider === b.provider &&
+    a.mode === b.mode &&
+    a.areaId === b.areaId &&
+    JSON.stringify(a.vocabulary) === JSON.stringify(b.vocabulary) &&
     a.attemptId === b.attemptId &&
     a.state === b.state &&
     a.result?.originalText === b.result?.originalText
@@ -145,7 +149,7 @@ export function sameRecordingSnapshot(a: Recording, b: Recording) {
 }
 export type RecordingPhase =
   | "idle"
-  | "saving_audio"
+  | "preparing_audio"
   | "transcribing"
   | "saving_transcript"
   | "saving_note";
@@ -158,12 +162,21 @@ export function recordingProgress(phase: RecordingPhase, durable: boolean) {
           ? "Saving note"
           : phase === "saving_transcript"
             ? "Saving transcript"
-            : "Saving recording",
+            : "Preparing recording",
     detail: durable
-      ? phase === "saving_note"
-        ? "Transcript saved on this device. Syncing to cloud."
-        : "Audio saved on this device."
-      : "Only in this tab until device storage confirms. Keep it open.",
+      ? "Transcript saved on this device. Syncing to cloud."
+      : "Audio is temporary in this tab. Closing or reloading removes it.",
     canCancel: phase === "transcribing",
   };
+}
+
+export function captureIsReadOnly(
+  recording: Pick<Recording, "generation" | "readOnly">,
+  library: { generation: number | null; ready: boolean; resetPending: boolean },
+) {
+  return (
+    recording.generation !== library.generation ||
+    library.resetPending ||
+    (!!recording.readOnly && !library.ready)
+  );
 }

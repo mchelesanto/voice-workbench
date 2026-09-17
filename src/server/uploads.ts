@@ -3,6 +3,7 @@ import { ApiError } from "./errors";
 import { requireType, withBoundedBody, parseInput } from "./http";
 import { validateAudio } from "./audio";
 import {
+  generationQuerySchema,
   LIMITS,
   PROVIDERS,
   transcriptionSchema,
@@ -28,7 +29,7 @@ export async function readTranscription(
     if (error instanceof ApiError) throw error;
     throw new ApiError("invalid_input");
   }
-  const allowed = ["audio", "provider", "mode", "vocabulary"];
+  const allowed = ["audio", "provider", "mode", "vocabulary", "generation"];
   if (
     [...form.keys()].some((key) => !allowed.includes(key)) ||
     allowed.some((key) => form.getAll(key).length !== 1)
@@ -39,7 +40,7 @@ export async function readTranscription(
   if (
     !(file instanceof File) ||
     typeof vocabulary !== "string" ||
-    new TextEncoder().encode(vocabulary).length > 32768 ||
+    new TextEncoder().encode(vocabulary).length > 512 * 1024 ||
     file.size === 0
   )
     throw new ApiError("invalid_input");
@@ -51,6 +52,7 @@ export async function readTranscription(
     throw new ApiError("invalid_input");
   }
   const input = parseInput(transcriptionSchema, {
+    generation: parseInput(generationQuerySchema, form.get("generation")),
     provider: form.get("provider"),
     mode: form.get("mode"),
     vocabulary: words,

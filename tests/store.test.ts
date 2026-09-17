@@ -7,6 +7,8 @@ import { migrate } from "../scripts/migrations.mjs";
 let client: Client;
 let store: Store;
 const original = {
+  generation: 1,
+  areaId: null,
   title: "Architektur",
   originalText: "Zuerst prüfen, noch nicht veröffentlichen.",
   body: "Zuerst prüfen, noch nicht veröffentlichen.",
@@ -27,6 +29,8 @@ describe("Shared note storage", () => {
     const id = randomUUID();
     expect((await store.create(id, original)).revision).toBe(1);
     const changed = await store.update(id, {
+      generation: 1,
+      areaId: null,
       title: "Geprüft",
       body: "Neue Fassung",
       expectedRevision: 1,
@@ -43,17 +47,25 @@ describe("Shared note storage", () => {
     const id = randomUUID();
     await store.create(id, original);
     await store.update(id, {
+      generation: 1,
+      areaId: null,
       title: "Rechner A",
       body: "A",
       expectedRevision: 1,
     });
     await expect(
-      store.update(id, { title: "Rechner B", body: "B", expectedRevision: 1 }),
+      store.update(id, {
+        generation: 1,
+        areaId: null,
+        title: "Rechner B",
+        body: "B",
+        expectedRevision: 1,
+      }),
     ).rejects.toMatchObject({
       code: "revision_conflict",
-      current: { body: "A", revision: 2 },
+      conflict: { kind: "note", current: { body: "A", revision: 2 } },
     });
-    expect((await store.get(id)).body).toBe("A");
+    expect((await store.get(id, 1)).body).toBe("A");
   });
   it("confirms unchanged edits through RETURNING and increments the revision", async () => {
     const id = randomUUID();
@@ -61,6 +73,8 @@ describe("Shared note storage", () => {
     expect(
       (
         await store.update(id, {
+          generation: 1,
+          areaId: null,
           title: original.title,
           body: original.body,
           expectedRevision: 1,
@@ -71,29 +85,35 @@ describe("Shared note storage", () => {
   it("removes content and permanently blocks late recreation", async () => {
     const id = randomUUID();
     await store.create(id, original);
-    await expect(store.delete(id, 2)).rejects.toMatchObject({
+    await expect(store.delete(id, 2, 1)).rejects.toMatchObject({
       code: "revision_conflict",
     });
-    await store.delete(id, 1);
-    await store.delete(id, 1);
+    await store.delete(id, 1, 1);
+    await store.delete(id, 1, 1);
     await expect(store.create(id, original)).rejects.toMatchObject({
       status: 410,
       code: "note_deleted",
     });
     await expect(
-      store.update(id, { title: "Alt", body: "Alt", expectedRevision: 1 }),
+      store.update(id, {
+        generation: 1,
+        areaId: null,
+        title: "Alt",
+        body: "Alt",
+        expectedRevision: 1,
+      }),
     ).rejects.toMatchObject({ code: "note_deleted" });
     expect((await client.execute("SELECT * FROM notes")).rows).toHaveLength(0);
     const marker = (await client.execute("SELECT * FROM deleted_notes"))
       .rows[0];
     expect(Object.keys(marker).sort()).toEqual(["deleted_at", "id"]);
-    expect((await store.list()).items).toHaveLength(0);
+    expect((await store.list(1)).items).toHaveLength(0);
   });
   it("distinguishes unknown IDs from deleted IDs", async () => {
-    await expect(store.get(randomUUID())).rejects.toMatchObject({
+    await expect(store.get(randomUUID(), 1)).rejects.toMatchObject({
       status: 404,
     });
-    await expect(store.delete(randomUUID(), 1)).rejects.toMatchObject({
+    await expect(store.delete(randomUUID(), 1, 1)).rejects.toMatchObject({
       code: "note_not_found",
     });
   });
@@ -104,19 +124,19 @@ describe("Shared note storage", () => {
       await store.create(randomUUID(), { ...original, body: "x".repeat(200) });
     }
     await client.execute({
-      sql: "UPDATE notes SET updated_at=?",
+      sql: "UPDATE library_notes SET updated_at=?",
       args: [stamp],
     });
-    const first = await store.list();
+    const first = await store.list(1);
     expect(first.items).toHaveLength(50);
     expect(first.items[0].preview).toHaveLength(140);
-    const next = await store.list(first.nextCursor!);
+    const next = await store.list(1, "all", first.nextCursor!);
     expect(next.items).toHaveLength(3);
     expect(next.nextCursor).toBeNull();
     expect(new Set([...first.items, ...next.items].map((x) => x.id)).size).toBe(
       53,
     );
-    await expect(store.list("invalid")).rejects.toMatchObject({
+    await expect(store.list(1, "all", "invalid")).rejects.toMatchObject({
       code: "invalid_input",
     });
   });
@@ -125,11 +145,11 @@ describe("Shared note storage", () => {
     await store.create(id, original);
     await expect(
       client.execute({
-        sql: "UPDATE notes SET original_text=? WHERE id=?",
+        sql: "UPDATE library_notes SET original_text=? WHERE id=?",
         args: ["Falsch", id],
       }),
     ).rejects.toBeDefined();
-    expect((await store.get(id)).originalText).toBe(original.originalText);
+    expect((await store.get(id, 1)).originalText).toBe(original.originalText);
   });
 });
 
@@ -147,7 +167,10 @@ describe("Shared vocabulary", () => {
       }),
     ).rejects.toMatchObject({
       code: "revision_conflict",
-      current: { vocabulary: ["Eigener Begriff"], revision: 2 },
+      conflict: {
+        kind: "settings",
+        current: { vocabulary: ["Eigener Begriff"], revision: 2 },
+      },
     });
   });
   it("treats missing singleton rows as schema errors", async () => {
@@ -157,8 +180,8 @@ describe("Shared vocabulary", () => {
     });
   });
   it("maps missing schema tables to an actionable setup error", async () => {
-    await client.execute("DROP TABLE notes");
-    await expect(store.list()).rejects.toMatchObject({
+    await client.execute("DROP TABLE library_notes");
+    await expect(store.list(1)).rejects.toMatchObject({
       code: "schema_unavailable",
     });
   });

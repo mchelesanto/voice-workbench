@@ -16,7 +16,8 @@ export type EditorStatus =
   | "error"
   | "conflict"
   | "deleted"
-  | "deleting";
+  | "deleting"
+  | "archived";
 export type Draft = {
   kind: "draft";
   draftId: string;
@@ -29,6 +30,8 @@ export type Draft = {
   current?: Note;
   error?: string;
   durable: boolean;
+  readOnly?: boolean;
+  archiveToken?: string;
   localIssue?: { kind: "persist" | "cleanup" | "discard"; message: string };
   restoredFrom?: { draftId: string; updatedAt: string; input: CreateNote };
   recoveryAncestors?: {
@@ -40,7 +43,7 @@ export type Draft = {
 };
 export type EditorPorts = {
   persist: (draft: Draft) => Promise<void>;
-  remove: (id: string) => Promise<void>;
+  remove: (id: string, generation: number) => Promise<void>;
   retire?: (source: NonNullable<Draft["restoredFrom"]>) => Promise<void>;
   write: (
     id: string,
@@ -60,6 +63,10 @@ export class EditorSession {
   private timer?: ReturnType<typeof setTimeout>;
   private alive = true;
   private discarded = false;
+  private fenced = false;
+  private paused = false;
+  private epoch = 0;
+  private archiveToken?: string;
   private localWrite = 0;
   private localBusy = false;
   private refreshAfter?: Note;
@@ -88,6 +95,8 @@ export class EditorSession {
         editorInstanceId: crypto.randomUUID(),
         noteId: note.id,
         input: createNoteSchema.parse({
+          generation: note.generation,
+          areaId: note.areaId,
           title: note.title,
           body: note.body,
           originalText: note.originalText,
@@ -133,6 +142,54 @@ export class EditorSession {
       ports,
     );
   }
+  private inactive() {
+    return (
+      this.discarded || this.fenced || this.paused || !!this.state.readOnly
+    );
+  }
+  pause() {
+    this.epoch++;
+    this.localWrite++;
+    this.paused = true;
+    this.busy = false;
+    this.localBusy = false;
+    this.refreshAfter = undefined;
+    clearTimeout(this.timer);
+    if (this.state.status === "saving")
+      this.update({
+        status: "error",
+        error:
+          "Saving was interrupted. Check the current library before retrying.",
+      });
+  }
+  resume() {
+    if (!this.fenced && !this.discarded) this.paused = false;
+  }
+  fence(): Draft {
+    this.pause();
+    this.fenced = true;
+    this.archiveToken ??= crypto.randomUUID();
+    this.update({
+      readOnly: true,
+      status: "archived",
+      archiveToken: this.archiveToken,
+    });
+    return {
+      ...this.state,
+      input: { ...this.state.input },
+      draftId: this.archiveToken,
+      archiveToken: this.archiveToken,
+      readOnly: true,
+      status: "archived",
+    };
+  }
+  historicallySecured(token: string) {
+    if (this.archiveToken === token)
+      this.update({ durable: true, localIssue: undefined });
+  }
+  get saving() {
+    return this.busy || this.localBusy;
+  }
   snapshot = () => this.state;
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -147,6 +204,7 @@ export class EditorSession {
   private schedule() {
     clearTimeout(this.timer);
     if (
+      !this.inactive() &&
       this.alive &&
       this.state.status === "local" &&
       this.state.localIssue?.kind !== "persist"
@@ -156,11 +214,12 @@ export class EditorSession {
       }, 700);
   }
   private cannotSave() {
-    return this.discarded || this.state.status === "deleted";
+    return this.inactive() || this.state.status === "deleted";
   }
   private persist() {
-    if (this.discarded) return Promise.resolve();
+    if (this.inactive()) return Promise.resolve();
     const ticket = ++this.localWrite;
+    const epoch = this.epoch;
     this.update({ durable: false });
     const value = {
       ...this.state,
@@ -174,12 +233,16 @@ export class EditorSession {
     const version = this.version;
     const work = this.queue
       .catch(() => {})
-      .then(() => (this.discarded ? undefined : this.ports.persist(value)));
+      .then(() =>
+        this.inactive() || epoch !== this.epoch
+          ? undefined
+          : this.ports.persist(value),
+      );
     this.queue = work;
     return work.then(
       () => {
         if (
-          !this.discarded &&
+          !this.inactive() &&
           ticket === this.localWrite &&
           version === this.version
         )
@@ -193,7 +256,7 @@ export class EditorSession {
       },
       (e) => {
         if (
-          !this.discarded &&
+          !this.inactive() &&
           ticket === this.localWrite &&
           version === this.version
         )
@@ -209,8 +272,8 @@ export class EditorSession {
       },
     );
   }
-  edit(patch: Partial<Pick<CreateNote, "title" | "body">>) {
-    if (this.discarded || ["deleting", "deleted"].includes(this.state.status))
+  edit(patch: Partial<Pick<CreateNote, "title" | "body" | "areaId">>) {
+    if (this.inactive() || ["deleting", "deleted"].includes(this.state.status))
       return;
     this.version++;
     this.update({
@@ -228,13 +291,15 @@ export class EditorSession {
     await this.persist();
   }
   private async finishLocal() {
+    const epoch = this.epoch;
     try {
       await this.persist();
     } catch {
       return;
     }
     if (
-      this.discarded ||
+      this.inactive() ||
+      epoch !== this.epoch ||
       this.state.status !== "saved" ||
       !this.state.restoredFrom ||
       !this.ports.retire
@@ -246,11 +311,16 @@ export class EditorSession {
     ];
     try {
       for (const source of sources) {
-        if (this.discarded || this.state.status !== "saved") return;
+        if (
+          this.inactive() ||
+          epoch !== this.epoch ||
+          this.state.status !== "saved"
+        )
+          return;
         await this.ports.retire(source);
       }
     } catch {
-      if (!this.discarded) {
+      if (!(this.inactive() || epoch !== this.epoch)) {
         this.update({
           localIssue: {
             kind: "cleanup",
@@ -261,7 +331,7 @@ export class EditorSession {
       }
       return;
     }
-    if (this.discarded) return;
+    if (this.inactive() || epoch !== this.epoch) return;
     this.update({
       restoredFrom: undefined,
       recoveryAncestors: undefined,
@@ -273,31 +343,39 @@ export class EditorSession {
     await this.persist().catch(() => {});
   }
   async retryLocal() {
-    if (this.discarded || this.busy || this.localBusy) return;
-    const version = this.version;
+    if (this.inactive() || this.busy || this.localBusy) return;
+    const version = this.version,
+      epoch = this.epoch;
     this.localBusy = true;
     try {
       await this.finishLocal();
     } finally {
-      this.localBusy = false;
-      if (this.version !== version) this.schedule();
-      try {
-        this.ports.localChanged?.();
-      } catch {
-        /* View refresh does not change local persistence. */
+      if (epoch === this.epoch) {
+        this.localBusy = false;
+        if (this.version !== version) this.schedule();
+        try {
+          this.ports.localChanged?.();
+        } catch {
+          /* View refresh does not change local persistence. */
+        }
       }
     }
   }
   async proposeRefinement(generate: (source: string) => Promise<string>) {
-    const source = this.state.input.body;
+    if (this.inactive()) throw new ClientError("This version is read-only.");
+    const source = this.state.input.body,
+      epoch = this.epoch;
     const text = await generate(source);
-    return { source, text };
+    if (this.inactive() || epoch !== this.epoch)
+      throw new ClientError("This suggestion belongs to an earlier library.");
+    return { source, text, epoch };
   }
-  applyRefinement(text: string, source: string) {
+  applyRefinement(text: string, source: string, epoch: number) {
     if (
-      this.discarded ||
+      this.inactive() ||
       ["deleting", "deleted"].includes(this.state.status) ||
-      this.state.input.body !== source
+      this.state.input.body !== source ||
+      epoch !== this.epoch
     )
       return false;
     this.update({ refinement: { before: source, applied: text } });
@@ -307,7 +385,7 @@ export class EditorSession {
   undoRefinement() {
     const previous = this.state.refinement;
     if (
-      this.discarded ||
+      this.inactive() ||
       ["deleting", "deleted"].includes(this.state.status) ||
       !previous ||
       this.state.input.body !== previous.applied
@@ -318,12 +396,14 @@ export class EditorSession {
     return true;
   }
   async discard() {
+    const epoch = this.epoch;
     this.discarded = true;
     this.alive = false;
     clearTimeout(this.timer);
     await this.queue.catch(() => {});
+    if (epoch !== this.epoch) return;
     try {
-      await this.ports.remove(this.state.draftId);
+      await this.ports.remove(this.state.draftId, this.state.input.generation);
       this.listeners.clear();
     } catch (error) {
       this.discarded = false;
@@ -340,13 +420,14 @@ export class EditorSession {
   async save() {
     clearTimeout(this.timer);
     if (
-      this.discarded ||
+      this.inactive() ||
       this.localBusy ||
       this.busy ||
       ["saved", "conflict", "deleted", "deleting"].includes(this.state.status)
     )
       return;
     this.busy = true;
+    const epoch = this.epoch;
     const version = this.version,
       sent = { ...this.state.input },
       revision = this.state.baseRevision;
@@ -356,7 +437,7 @@ export class EditorSession {
       } catch {
         return;
       }
-      if (this.cannotSave()) return;
+      if (this.cannotSave() || epoch !== this.epoch) return;
       this.update({ status: "saving", error: undefined });
       let note: Note;
       try {
@@ -364,22 +445,23 @@ export class EditorSession {
       } catch (error) {
         if (
           error instanceof ClientError &&
-          error.current &&
-          "body" in error.current &&
+          error.conflict?.kind === "note" &&
           classifyEditConflict(
             {
+              generation: sent.generation,
+              areaId: sent.areaId,
               title: sent.title,
               body: sent.body,
               expectedRevision: revision ?? 1,
             },
-            error.current,
+            error.conflict.current,
           ) === "confirmed" &&
           revision !== null
         )
-          note = error.current;
+          note = error.conflict.current;
         else throw error;
       }
-      if (this.cannotSave()) return;
+      if (this.cannotSave() || epoch !== this.epoch) return;
       try {
         this.ports.confirmed?.(note);
       } catch {
@@ -405,7 +487,7 @@ export class EditorSession {
       });
       // Local bookkeeping cannot reverse an already confirmed cloud write.
       await this.finishLocal();
-      if (!this.discarded) {
+      if (!this.inactive()) {
         try {
           this.ports.changed();
         } catch {
@@ -413,15 +495,15 @@ export class EditorSession {
         }
       }
     } catch (error) {
-      if (this.cannotSave()) return;
-      if (
-        error instanceof ClientError &&
-        error.current &&
-        "body" in error.current
-      )
+      if (this.cannotSave() || epoch !== this.epoch) return;
+      if (error instanceof ClientError && error.code === "library_reset") {
+        this.fence();
+        return;
+      }
+      if (error instanceof ClientError && error.conflict?.kind === "note")
         this.update({
           status: "conflict",
-          current: error.current,
+          current: error.conflict.current,
           error: error.message,
         });
       else if (
@@ -434,6 +516,7 @@ export class EditorSession {
       else this.update({ status: "error", error: message(error) });
       await this.persist().catch(() => {});
     } finally {
+      if (epoch !== this.epoch) return;
       this.busy = false;
       if (this.refreshAfter) {
         const n = this.refreshAfter;
@@ -444,7 +527,12 @@ export class EditorSession {
     }
   }
   revalidate(note: Note) {
-    if (this.discarded || ["deleted", "deleting"].includes(this.state.status))
+    if (note.id !== this.state.noteId) return;
+    if (note.generation !== this.state.input.generation) {
+      this.fence();
+      return;
+    }
+    if (this.inactive() || ["deleted", "deleting"].includes(this.state.status))
       return;
     if (this.busy) {
       this.refreshAfter = note;
@@ -458,7 +546,12 @@ export class EditorSession {
     if (note.revision <= (this.state.baseRevision ?? 0)) return;
     if (this.state.status === "saved") {
       this.update({
-        input: { ...this.state.input, title: note.title, body: note.body },
+        input: {
+          ...this.state.input,
+          title: note.title,
+          body: note.body,
+          areaId: note.areaId,
+        },
         baseRevision: note.revision,
         current: note,
         durable: false,
@@ -466,7 +559,8 @@ export class EditorSession {
       });
     } else if (
       note.title === this.state.input.title &&
-      note.body === this.state.input.body
+      note.body === this.state.input.body &&
+      note.areaId === this.state.input.areaId
     )
       this.update({
         baseRevision: note.revision,
@@ -484,7 +578,7 @@ export class EditorSession {
     void this.persist().catch(() => {});
   }
   removed() {
-    if (this.discarded) return;
+    if (this.inactive()) return;
     clearTimeout(this.timer);
     this.update({
       status: "deleted",
@@ -494,12 +588,17 @@ export class EditorSession {
   }
   resolve(choice: "local" | "remote") {
     const current = this.state.current;
-    if (this.discarded || !current || this.state.status !== "conflict") return;
+    if (this.inactive() || !current || this.state.status !== "conflict") return;
     this.version++;
     this.update({
       input:
         choice === "remote"
-          ? { ...this.state.input, title: current.title, body: current.body }
+          ? {
+              ...this.state.input,
+              title: current.title,
+              body: current.body,
+              areaId: current.areaId,
+            }
           : this.state.input,
       baseRevision: current.revision,
       status: "local",
@@ -511,6 +610,7 @@ export class EditorSession {
       .catch(() => {});
   }
   async prepareDelete() {
+    if (this.inactive()) throw new ClientError("This version is read-only.");
     if (this.busy)
       throw new ClientError(
         "A save is still in progress. Wait for it to finish before deleting.",
@@ -519,20 +619,18 @@ export class EditorSession {
     this.update({ status: "deleting" });
   }
   deleteFailed(error: unknown) {
-    if (
-      error instanceof ClientError &&
-      error.current &&
-      "body" in error.current
-    )
+    if (error instanceof ClientError && error.conflict?.kind === "note")
       this.update({
         status: "conflict",
-        current: error.current,
+        current: error.conflict.current,
         error: error.message,
       });
     else this.update({ status: "error", error: message(error) });
     void this.persist().catch(() => {});
   }
   dispose() {
+    this.pause();
+    this.fenced = true;
     this.alive = false;
     clearTimeout(this.timer);
     this.listeners.clear();

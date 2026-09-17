@@ -4,6 +4,9 @@
 
 ### Added
 
+- Area persistence, generation-fenced note APIs, immutable reset/cancellation receipts, and browser-profile reset recovery.
+- Read-only preservation of older-generation text and audio, plus explicit legacy-audio cleanup.
+
 - Alphabetical vocabulary tags with phrase input, bulk paste, accessible removal, and preservation of invalid or over-limit input.
 
 - Focused transcription status with the bound provider, elapsed time, real pipeline stages, cancellation, and backup downloads.
@@ -24,7 +27,7 @@
 - Separate local editor drafts, revision conflict resolution, and visible save states.
 - Side-by-side refinement comparison, guarded undo of the previous working version, plain-text copying, and Markdown export.
 - Local audio playback, grouped recovery drafts, and independent local save retries.
-- Recoverable transcripts after browser-storage errors and durable oversized recordings.
+- Recoverable transcripts after browser-storage errors and temporary oversized audio for explicit download/removal.
 - Controlled dialog dismissal and local draft deletion across pending writes.
 - Compact mobile editing controls, visible copy actions, and readable status colors.
 - Vocabulary settings, provider availability, and separate audio download and deletion.
@@ -32,11 +35,16 @@
 
 ### Changed
 
+- Keep new audio only in tab memory, with reserved capacity and truthful reload/close warnings. Save transcripts as strict text-only drafts before cloud creation.
+- Freeze capture vocabulary/context and expand stored word lists to 1,000 terms while enforcing provider-specific request caps.
+
 - Replace the ten-minute application cap with provider-specific recording and import limits, larger uploads, compact speech capture, and a separate long-transcription deadline.
 
 - Runtime messages, code comments, and test descriptions use English. Multilingual input remains supported.
 
 ### Fixed
+
+- Pause capture, its timer and input immediately before the compact discard question. Resume continues the same clip; pause time is excluded. A separate Pause/Resume action replaces the footer Cancel button.
 
 - Apply a selected remote vocabulary to subsequent recordings and unlock settings opened before their initial load completes.
 - Preserve rejected input across retries, confirm equal word sets regardless of stored order, and keep mobile conflict actions clear of their content.
@@ -46,7 +54,7 @@
 - Recognize the platform MP3 MIME alias while retaining byte-level format validation.
 
 - Include live audio and completed in-memory transcripts in recovery, with truthful storage and cancellation states.
-- Prevent older transcription attempts in another tab from overwriting newer recording results.
+- Prevent older transcription completions from overwriting newer per-tab attempts or crossing a library reset.
 - Share one client deadline across both attempts of a data request.
 
 - Bound storage operations and their HTTP transport with isolated request cancellation and explicit timeout outcomes.
@@ -65,6 +73,8 @@
 - Track the newest completed local snapshot and reset the view when opening another note.
 
 ### Pending
+
+- Area management, capture destination selection, note moves, and delete-all entry UI.
 
 - Complete-application validation before the first release.
 - License and public repository visibility decisions.

@@ -2,16 +2,17 @@ import { z } from "zod";
 import {
   apiErrorSchema,
   retryDecision,
+  type Conflict,
   type ErrorCode,
   type RetryOperation,
 } from "../shared/responses";
-import { LIMITS, type Note, type Settings } from "../shared/contracts";
+import { LIMITS } from "../shared/contracts";
 export class ClientError extends Error {
   constructor(
     message: string,
     public status?: number,
     public code?: ErrorCode,
-    public current?: Note | Settings,
+    public conflict?: Conflict,
   ) {
     super(message);
   }
@@ -33,13 +34,22 @@ export async function request<T>(
       : options.body === undefined
         ? undefined
         : JSON.stringify(options.body);
-  const operation = options.operation ?? (method === "GET" ? "read" : "write");
+  const operation =
+    path === "/library/reset" || path === "/library/reset/cancel"
+      ? "reset"
+      : (options.operation ?? (method === "GET" ? "read" : "write"));
   const signal = AbortSignal.any([
     AbortSignal.timeout(
       operation === "model"
         ? path === "/transcribe"
-          ? LIMITS.transcriptionTimeoutMs + LIMITS.audioBodyTimeoutMs + 10000
-          : 150000
+          ? LIMITS.transcriptionTimeoutMs +
+            LIMITS.audioBodyTimeoutMs +
+            LIMITS.storageTimeoutMs +
+            10000
+          : LIMITS.providerTimeoutMs +
+            LIMITS.bodyTimeoutMs +
+            LIMITS.storageTimeoutMs +
+            10000
         : 20000,
     ),
     ...(options.signal ? [options.signal] : []),
@@ -76,7 +86,7 @@ export async function request<T>(
             failure.data.error.message,
             response.status,
             failure.data.error.code,
-            failure.data.current,
+            failure.data.conflict,
           );
         throw new ClientError(
           "The request failed. Please try again.",

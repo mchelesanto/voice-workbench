@@ -3,6 +3,8 @@ import { EditorSession, type EditorPorts } from "../src/client/editor";
 import type { Note } from "../src/shared/contracts";
 import { ClientError } from "../src/client/api";
 const note: Note = {
+  generation: 1,
+  areaId: null,
   id: "11111111-1111-4111-8111-111111111111",
   title: "Gedanke",
   body: "Original",
@@ -65,9 +67,12 @@ describe("Editor reliability", () => {
     const { session, ports } = setup();
     ports.write = vi.fn(async () => {
       throw new ClientError("Konflikt", 409, "revision_conflict", {
-        ...note,
-        body: "Remote",
-        revision: 4,
+        kind: "note",
+        current: {
+          ...note,
+          body: "Remote",
+          revision: 4,
+        },
       });
     });
     session.edit({ body: "Lokal" });
@@ -97,9 +102,12 @@ describe("Editor reliability", () => {
     expect(session.snapshot().draftId).not.toBe(other.snapshot().draftId);
     ports.write = vi.fn(async () => {
       throw new ClientError("Konflikt", 409, "revision_conflict", {
-        ...note,
-        body: "Neu",
-        revision: 2,
+        kind: "note",
+        current: {
+          ...note,
+          body: "Neu",
+          revision: 2,
+        },
       });
     });
     session.edit({ body: "Neu" });
@@ -338,9 +346,12 @@ it("notifies recording recovery when a lost save response is confirmed by confli
   ports.confirmed = vi.fn();
   ports.write = vi.fn(async () => {
     throw new ClientError("Conflict", 409, "revision_conflict", {
-      ...note,
-      body: "Saved words",
-      revision: 2,
+      kind: "note",
+      current: {
+        ...note,
+        body: "Saved words",
+        revision: 2,
+      },
     });
   });
   session.edit({ body: "Saved words" });
@@ -550,7 +561,9 @@ it("binds an asynchronous refinement to its original source", async () => {
   const proposal = await pending;
   expect(generate).toHaveBeenCalledWith("Original working version");
   expect(proposal.source).toBe("Original working version");
-  expect(session.applyRefinement(proposal.text, proposal.source)).toBe(false);
+  expect(session.applyRefinement(proposal.text, proposal.source, 0)).toBe(
+    false,
+  );
   session.dispose();
 });
 
@@ -580,14 +593,14 @@ it("retires a recovery source only after the restored version is confirmed", asy
 it("can undo a refinement to the edited source and rejects stale replacement", () => {
   const { session } = setup();
   session.edit({ body: "My carefully edited version" });
-  expect(session.applyRefinement("Proposal", "Old source")).toBe(false);
+  expect(session.applyRefinement("Proposal", "Old source", 0)).toBe(false);
   expect(
-    session.applyRefinement("Proposal", "My carefully edited version"),
+    session.applyRefinement("Proposal", "My carefully edited version", 0),
   ).toBe(true);
   expect(session.snapshot().input.originalText).toBe("Original");
   expect(session.undoRefinement()).toBe(true);
   expect(session.snapshot().input.body).toBe("My carefully edited version");
-  session.applyRefinement("Another proposal", "My carefully edited version");
+  session.applyRefinement("Another proposal", "My carefully edited version", 0);
   session.edit({ body: "Newer manual work" });
   expect(session.undoRefinement()).toBe(false);
   expect(session.snapshot().input.body).toBe("Newer manual work");
@@ -613,4 +626,81 @@ it("retires the full unchanged recovery lineage after a second restore", async (
   second.dispose();
   first.dispose();
   original.dispose();
+});
+
+it("fences queued local and late cloud writes while preserving the latest visible text", async () => {
+  const { session, ports } = setup();
+  let complete!: (note: Note) => void;
+  ports.write = vi.fn(
+    () =>
+      new Promise<Note>((resolve) => {
+        complete = resolve;
+      }),
+  );
+  session.edit({ body: "Before request" });
+  const pending = session.save();
+  await vi.waitFor(() => expect(ports.write).toHaveBeenCalled());
+  session.edit({ body: "Newest visible text" });
+  const frozen = session.fence();
+  expect(frozen).toMatchObject({
+    status: "archived",
+    readOnly: true,
+    input: { body: "Newest visible text", generation: 1 },
+  });
+  expect(frozen.archiveToken).toBeTruthy();
+  const writes = vi.mocked(ports.persist).mock.calls.length;
+  complete({ ...note, body: "Before request", revision: 2 });
+  await pending;
+  session.edit({ body: "Must not replace" });
+  await session.save();
+  await session.secure();
+  expect(session.snapshot().input.body).toBe("Newest visible text");
+  expect(ports.changed).not.toHaveBeenCalled();
+  expect(vi.mocked(ports.persist).mock.calls.length).toBe(writes);
+  expect(session.fence().archiveToken).toBe(frozen.archiveToken);
+  session.dispose();
+});
+
+it("does not let a paused old save complete into a resumed editor", async () => {
+  const { session, ports } = setup();
+  let old!: (note: Note) => void;
+  ports.write = vi.fn(
+    () =>
+      new Promise<Note>((resolve) => {
+        old = resolve;
+      }),
+  );
+  session.edit({ body: "Before pause" });
+  const pending = session.save();
+  await vi.waitFor(() => expect(old).toBeTypeOf("function"));
+  session.pause();
+  session.resume();
+  session.edit({ body: "After resume" });
+  old({ ...note, body: "Before pause", revision: 2 });
+  await pending;
+  expect(session.snapshot().input.body).toBe("After resume");
+  expect(session.snapshot().baseRevision).toBe(1);
+  expect(ports.confirmed).toBeUndefined();
+  session.dispose();
+});
+
+it("rejects a refinement from a previous terminal epoch even with equal source text", async () => {
+  const { session } = setup();
+  const proposal = await session.proposeRefinement(async () => "Proposal");
+  session.pause();
+  session.resume();
+  expect(
+    session.applyRefinement(proposal.text, proposal.source, proposal.epoch),
+  ).toBe(false);
+  let resolve!: (value: string) => void;
+  const old = session.proposeRefinement(
+    () =>
+      new Promise<string>((r) => {
+        resolve = r;
+      }),
+  );
+  session.fence();
+  resolve("Late proposal");
+  await expect(old).rejects.toThrow("earlier library");
+  session.dispose();
 });

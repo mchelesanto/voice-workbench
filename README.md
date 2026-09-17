@@ -2,13 +2,13 @@
 
 A personal workspace for thinking out loud, shaping your words, and keeping notes across computers.
 
-Record a thought, keep the initial transcription, and refine a separate working version. Your notes and vocabulary live in your own Turso database. Audio and recovery drafts stay in your browser.
+Record a thought, keep the initial transcription, and refine a separate working version. Your notes and vocabulary live in your own Turso database. Audio stays only in the open tab and is lost on reload or close. Text recovery drafts are saved separately in the browser.
 
 **Initial transcription · Kept unchanged** preserves the first text returned by the transcription provider. With Polished mode, that text is already polished; a separate verbatim transcript is not generated. The audio recording is the source, and even Verbatim mode may contain transcription errors.
 
 ## Project status
 
-The local server and browser workspace are implemented and locally validated. This is a preview; complete-application validation is still pending before the first release.
+This is a locally validated preview with temporary audio, pause/resume, and the area/reset storage foundation. New captures use General; area management, destination selection, note moves, and the delete-all entry screen are the next UI increment. Complete-application validation remains pending before the first release.
 
 ## Quick start
 
@@ -28,19 +28,19 @@ Create a dedicated Turso database and a token scoped to that database. The token
 
 Set `GOOGLE_GENERATIVE_AI_API_KEY` for Google transcription, `MISTRAL_API_KEY` for Mistral transcription, or both. Set `FIREWORKS_API_KEY` for optional refinement with GLM 5.3 Flash. Unconfigured providers are shown as unavailable. Provider selection does not change the language you speak; the interface is English.
 
-On another computer, use the same Turso connection in that computer's own `.env.local`. Do not create a second database if you want a shared library. Audio and unsynchronized drafts remain on their original device.
+On another computer, use the same Turso connection in that computer's own `.env.local`. Do not create a second database if you want a shared library. Temporary audio remains in its original tab; unsynchronized text drafts remain in their original browser profile.
 
 Credentials belong exclusively in the ignored `.env.local`. The launcher rejects extra environment files and unknown keys, and inherited credentials do not override the project file. Builds work without credentials. Credentials are never returned to the browser.
 
 ## Working with your voice
 
-- **Record:** Choose a provider and transcription mode, then start. A focused capture view shows elapsed time and a real microphone level. **Stop & transcribe** finishes the recording; **Cancel recording** asks before discarding it without transcription. Each completed recording becomes a new note. Recording stops at the selected provider’s duration or upload limit: Google allows 60 minutes, Mistral 180 minutes. If you are deciding whether to discard at that point, nothing is sent until you explicitly keep or discard the finished audio.
-- **Import:** Use **Import audio** to select or drop one MP3, M4A/MP4, WAV, WebM, or Ogg/Opus file. Preview it and choose the provider/mode before **Transcribe**. Selecting or canceling a file sends nothing. Files must be readable by the browser and fit the selected provider: Google allows 60 minutes and 70 MiB through the inline upload; Mistral allows 180 minutes and 500 MB. Switching provider rechecks the current selection. The original file is unchanged; the browser secures a local copy before upload.
+- **Record:** Choose a provider and transcription mode, then start. A focused capture view shows elapsed time and a real microphone level. **Stop & transcribe** finishes the recording; **Pause recording** lets you think, and **Resume recording** continues the same clip without including the pause in its duration. The header **X** pauses first and asks whether to discard or continue. Each completed recording becomes a new note. Recording stops at the selected provider’s duration or upload limit: Google allows 60 minutes, Mistral 180 minutes. If you are deciding whether to discard at that point, nothing is sent until you explicitly keep or discard the finished audio.
+- **Import:** Use **Import audio** to select or drop one MP3, M4A/MP4, WAV, WebM, or Ogg/Opus file. Preview it and choose the provider/mode before **Transcribe**. Selecting or canceling a file sends nothing. Files must be readable by the browser and fit the selected provider: Google allows 60 minutes and 70 MiB through the inline upload; Mistral allows 180 minutes and 500 MB. Switching provider rechecks the current selection. The original file is unchanged; audio stays in this tab until it is closed or reloaded.
 - **Processing:** A focused status view names Google or Mistral, shows elapsed time and the current save/transcription stage, and keeps audio downloads available. Cancel transcription retains your audio; provider charges may still apply. No estimated percentage is shown.
-- **Vocabulary:** Add words or phrases as alphabetical tags in **Vocabulary & models**. Enter or comma adds a term; paste a comma-, tab-, or newline-separated list to add several. Save also includes the last typed phrase. Invalid or over-limit terms stay editable, and conflicting versions require an explicit choice. The current shared dictionary supports 100 terms.
+- **Vocabulary:** Add words or phrases as alphabetical tags in **Vocabulary & models**. Enter or comma adds a term; paste a comma-, tab-, or newline-separated list to add several. Save also includes the last typed phrase. Invalid or over-limit terms stay editable, and conflicting versions require an explicit choice. The shared dictionary supports 1,000 terms. Google accepts up to 1,000 terms per request and Mistral up to 100. An oversized dictionary blocks recording for that provider without silently dropping words.
 - **Write:** Edit the title and working text. The initial transcription remains unchanged. Edits are saved locally before cloud writes.
 - **Refine:** Ask GLM 5.3 Flash through Fireworks to clean up, structure, or translate your text into English. Compare the exact input with the suggestion, then explicitly apply it. Undo restores the previous working version within the current editor session. If you edit again, that previous version remains available to copy without overwriting the newer work. A changed source makes an older suggestion ineligible for application.
-- **Recover:** Open **Local audio & drafts** to recover completed recordings and pending drafts. Drafts from separate tabs are preserved independently and grouped by note. Unsaved text still held in the current tab appears here even if browser storage is unavailable; **Open draft** reopens that live version without waiting for the cloud. Copy or download in-memory-only text before closing or reloading. A confirmed restoration retires its exact source snapshot, preserving newer edits. A local-only save retry never starts a model request. If local storage rejects a finished transcript, it remains visible for copying or Markdown download.
+- **Recover:** Open **Local audio & drafts** to open temporary recordings and recover persistent text drafts. Drafts from separate tabs are preserved independently and grouped by note. Unsaved text still held in the current tab appears here even if browser storage is unavailable; **Open draft** reopens that live version without waiting for the cloud. Copy or download in-memory-only text before closing or reloading. A confirmed restoration retires its exact source snapshot, preserving newer edits. A local-only save retry never starts a model request. If local storage rejects a finished transcript, it remains visible for copying or Markdown download.
 - **Resolve:** Concurrent edits show both versions. Choose explicitly; the application never silently overwrites another version.
 - **Use elsewhere:** Copy plain text or download a Markdown note. Listen to locally available audio, or download and delete it separately.
 
@@ -50,7 +50,7 @@ The library filter searches titles and the first 140 characters of each loaded n
 
 Recovery identifies the provider and mode stored with each recording. Changing the recording bar affects the next recording only. Unsupported or oversized audio is retained for download, with no unchanged upload offered. Configuration failures explain the setup step and require your acknowledgement before retrying. Later successful saves and reopening a cloud note also confirm the matching local recording, even if its working text has since changed.
 
-The recovery space includes recordings and completed transcripts held only in the current tab. Saving on this device is confirmed only after the local transaction completes. Cancel is available during transcription; saving the resulting transcript is a separate, non-cancelable step. Concurrent tabs claim recording attempts atomically, so an older result cannot overwrite a newer attempt or its cloud confirmation.
+The recovery space includes recordings and completed transcripts held only in the current tab. Saving on this device is confirmed only after the local transaction completes. Cancel is available during transcription; saving the resulting transcript is a separate, non-cancelable step. Recording attempts use per-tab tokens, so an older result cannot overwrite a newer attempt or its cloud confirmation. Audio is not shared between tabs.
 
 Playback first resolves the complete audio duration. Browser recordings without duration metadata are scanned locally while paused, then returned to the beginning before controls appear. The recording card uses that media duration once available; the stored capture timer remains unchanged. Refreshing the library keeps the same recording at its current position. If preparation or playback fails, download the audio to use another player. Existing recordings are supported without rewriting their files.
 
@@ -70,13 +70,19 @@ Database operations share a 12-second deadline per operation and follow client c
 
 Both attempts of a data request share one 20-second client deadline. A retry does not restart that deadline.
 
+## Library upgrades and reset scope
+
+Migration 0002 preserves existing notes and settings, moves notes into a generation-fenced table, and makes the old table name a read-only view. Back up the database and update every local installation before using the new generation-aware client. Old server writes deliberately fail after this migration. Never migrate a live database before the compatible client is ready.
+
+The reset protocol removes notes across all areas and, after a confirmed receipt, local content in the initiating browser profile. It preserves words and areas. Other profiles retain their old local material read-only. Unknown outcomes stay locked until an explicit same-operation retry or authoritative cancellation resolves them. Reset requests never retry automatically; old receipts cannot clear newer notes. The reset-entry UI is still pending.
+
 ## Data and limits
 
-Transcription sends audio and vocabulary to your selected provider. Refinement sends text to Fireworks. Notes and settings are stored in Turso. Audio and pending drafts remain in IndexedDB in the current browser profile. Clearing browser data removes this local recovery space. Download important audio for a separate backup.
+Transcription sends audio and vocabulary to your selected provider. Refinement sends text to Fireworks. Notes and settings are stored in Turso. New audio never enters IndexedDB or another application-managed durable store. Text drafts and reset metadata use IndexedDB. Earlier saved audio stays read-only until you explicitly download/remove it; new capture/import waits for that one-time cleanup. Removal first secures any unextracted transcript atomically. Download important audio before closing or reloading.
 
 Refinement can change meaning despite preservation instructions. Review names, order, conditions, and negations. Incomplete model responses are not offered for application. Refinement accepts up to 12,000 UTF-16 units; larger notes can still be saved and exported.
 
-This is a local single-user application, without authentication against other processes on the same computer. It is not configured for public network access. There is no general offline synchronization or guaranteed recovery of a recording still in progress during a browser crash. Server limits bound upload bytes and processing time, not decoded audio duration. Transcription has a 30-minute processing deadline, distinct from the length of your recording; refinement retains its two-minute deadline. Browser recordings request 64 kbit/s audio to keep spoken notes compact, though the browser controls the actual encoding. Large files require available browser storage and memory. Two model requests can run at once per local server process.
+This is a local single-user application, without authentication against other processes on the same computer. It is not configured for public network access. There is no general offline synchronization or guaranteed recovery of a recording still in progress during a browser crash. Server limits bound upload bytes and processing time, not decoded audio duration. Transcription has a 30-minute processing deadline, distinct from the length of your recording; refinement retains its two-minute deadline. Browser recordings request 64 kbit/s audio to keep spoken notes compact, though the browser controls the actual encoding. Large files require available memory. Retained audio and active reservations share a 1,000,000,000-byte budget per tab; audio is never silently evicted. This budget bounds retained Blob bytes, not the full browser heap. Two model requests can run at once per local server process.
 
 ## Technical reference
 
@@ -84,6 +90,8 @@ This is a local single-user application, without authentication against other pr
 - `docs/design/audio-entry.md`: capture focus, discard confirmation, and audio import behavior.
 - `docs/design/processing-status.md`: processing stages, cancellation, and backup availability.
 - `docs/design/vocabulary-editor.md`: alphabetical tags, input handling, and settings conflicts.
+- `docs/design/workspace-management.md`: area, generation, reset, and temporary-audio contracts.
+- `docs/adr/0003-areas-and-library-generation.md`: lifecycle and reset decisions.
 - `docs/adr/0001-local-next-and-shared-turso.md`: runtime and persistence decision.
 - `src/shared/contracts.ts` and `src/shared/responses.ts`: shared validation, response, and retry contracts.
 

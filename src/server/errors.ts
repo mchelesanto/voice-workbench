@@ -1,7 +1,25 @@
 import "server-only";
-import type { ErrorCode, FieldIssue } from "../shared/responses";
+import type { ErrorCode, FieldIssue, Conflict } from "../shared/responses";
 export type { ErrorCode } from "../shared/responses";
 const definitions = {
+  library_reset: [
+    409,
+    "The library was cleared. Your earlier local content is read-only.",
+  ],
+  reset_conflict: [
+    409,
+    "This reset ID belongs to another request. Resolve it before continuing.",
+  ],
+  reset_cancelled: [
+    409,
+    "This reset was cancelled without clearing the library.",
+  ],
+  generation_exhausted: [
+    409,
+    "The library version limit was reached. No content was removed.",
+  ],
+  area_name_conflict: [409, "An active area already uses that name."],
+  area_not_found: [404, "This area no longer exists."],
   forbidden_origin: [403, "This request is not allowed."],
   method_not_allowed: [405, "This method is not available here."],
   api_not_found: [404, "This endpoint does not exist."],
@@ -82,10 +100,10 @@ const definitions = {
     410,
     "This note was deleted. You can save your draft as a new note.",
   ],
-  id_conflict: [409, "This note ID already belongs to another recording."],
+  id_conflict: [409, "This ID already belongs to different content."],
   revision_conflict: [
     409,
-    "This note or setting has changed. Both versions remain available.",
+    "This item has changed. Both versions remain available.",
   ],
   internal_error: [500, "The request could not be processed."],
 } as const satisfies Record<ErrorCode, readonly [number, string]>;
@@ -93,7 +111,7 @@ export class ApiError extends Error {
   readonly status: number;
   constructor(
     readonly code: ErrorCode,
-    readonly current?: unknown,
+    readonly conflict?: Conflict,
     readonly issues?: FieldIssue[],
   ) {
     super(definitions[code][1]);

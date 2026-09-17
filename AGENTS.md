@@ -24,11 +24,13 @@ Use Node.js 24 or newer and npm. Install dependencies with `npm ci`.
 - `npm run typecheck`, `npm run lint`, `npm run format:check`: source validation.
 - `npm run format`: format source, tests, and configuration.
 
+A build replaces `.next`, which may be serving the running local app. Run verification builds in an isolated copy under `temp/`; never overwrite the active build during read-only review.
+
 Keep TypeScript strict. UI copy, runtime messages, identifiers, comments, and test descriptions are English. Multilingual transcription and vocabulary fixtures remain intentional. Use existing shared schemas and errors. Do not import server modules into the client.
 
 ## Browser behavior
 
-Persist completed recordings before upload and finished transcripts before cloud creation. Separate drafts by editor instance. Preserve local edits during pending requests and revision conflicts. Do not automatically retry model calls. Use existing retry and replay classifiers for data requests.
+Keep new audio only in tab memory. Persist text-only transcripts before cloud creation. Freeze generation, area and vocabulary before capture/import; fence every content operation through the library controller. Legacy IndexedDB audio is export/remove-only until explicit cleanup. Separate drafts by editor instance. Preserve local edits during pending requests and revision conflicts. Do not automatically retry model calls. Use existing retry and replay classifiers for data requests.
 
 Keep desktop and mobile workflows complete. Use the application tokens, visible keyboard focus, accessible action names, and reduced-motion support. Do not render transcript or model text as HTML. Clipboard success requires a fulfilled write; downloads use safe filenames.
 

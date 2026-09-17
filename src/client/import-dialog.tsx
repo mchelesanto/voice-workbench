@@ -15,9 +15,10 @@ import {
   type Mode,
   type Provider,
 } from "../shared/contracts";
-import type { Recording } from "./local-store";
+import type { Recording, CaptureContext } from "./recording";
 import {
   inspectAudioFile,
+  validateImportSize,
   importDurationError,
   type AudioImport,
 } from "./audio-import";
@@ -32,25 +33,39 @@ type Selection = AudioImport & {
 export function ImportDialog({
   config,
   settingsReady,
+  cachedWords,
   retryConnection,
   provider: initialProvider,
   mode: initialMode,
   close,
   transcribe,
+  reserve,
+  release,
+  freeze,
 }: {
   config: AppConfig | null;
   settingsReady: boolean;
+  cachedWords: boolean;
   retryConnection: () => Promise<void>;
   provider: Provider;
   mode: Mode;
   close: () => void;
-  transcribe: (recording: Recording) => void;
+  transcribe: (recording: Recording, reservation: string) => void;
+  reserve: (bytes: number) => string;
+  release: (token: string) => void;
+  freeze: (provider: Provider, mode: Mode) => Promise<CaptureContext>;
 }) {
   const ref = useRef<HTMLDialogElement>(null),
     input = useRef<HTMLInputElement>(null),
     inspection = useRef<AbortController | null>(null),
     counter = useRef(0),
     committed = useRef(false);
+  const reservation = useRef<string | null>(null);
+  const alive = useRef(true);
+  const releaseRef = useRef(release);
+  useEffect(() => {
+    releaseRef.current = release;
+  }, [release]);
   const titleId = useId(),
     providerId = useId(),
     modeId = useId();
@@ -64,14 +79,21 @@ export function ImportDialog({
     [dragging, setDragging] = useState(false),
     [checking, setChecking] = useState(false);
   useEffect(() => {
+    alive.current = true;
     const dialog = ref.current;
     dialog?.showModal();
     return () => {
+      alive.current = false;
       inspection.current?.abort();
+      if (reservation.current) releaseRef.current(reservation.current);
+      reservation.current = null;
       dialog?.close();
     };
   }, []);
   const read = async (files: FileList | File[]) => {
+    if (committed.current) return;
+    if (reservation.current) releaseRef.current(reservation.current);
+    reservation.current = null;
     inspection.current?.abort();
     const controller = new AbortController();
     inspection.current = controller;
@@ -85,11 +107,19 @@ export function ImportDialog({
       return;
     }
     setBusy(true);
+    let token: string | undefined;
     try {
+      validateImportSize(files[0].size);
+      token = reserve(files[0].size);
+      reservation.current = token;
       const result = await inspectAudioFile(files[0], controller.signal);
       if (!controller.signal.aborted)
         setSelection({ ...result, key: `import-${ticket}` });
     } catch (e) {
+      if (token) {
+        releaseRef.current(token);
+        if (reservation.current === token) reservation.current = null;
+      }
       if (!controller.signal.aborted)
         setError(
           e instanceof Error
@@ -143,21 +173,46 @@ export function ImportDialog({
     !checking &&
     settingsReady &&
     supportsMode(provider, mode);
-  const send = () => {
-    if (!canSend || !selection || committed.current) return;
+  const send = async () => {
+    if (!canSend || !selection || committed.current || !reservation.current)
+      return;
     committed.current = true;
-    inspection.current?.abort();
-    transcribe({
-      kind: "recording",
-      id: crypto.randomUUID(),
-      blob: selection.blob,
-      mime: selection.mime,
-      durationMs: Math.round(selection.durationMs!),
-      createdAt: new Date().toISOString(),
-      provider,
-      mode,
-      state: "recorded",
-    });
+    setBusy(true);
+    const token = reservation.current,
+      ticket = counter.current;
+    try {
+      const context = await freeze(provider, mode);
+      if (
+        !alive.current ||
+        ticket !== counter.current ||
+        reservation.current !== token
+      )
+        return;
+      reservation.current = null;
+      transcribe(
+        {
+          ...context,
+          kind: "recording",
+          blob: selection.blob,
+          mime: selection.mime,
+          durationMs: Math.round(selection.durationMs!),
+          provider,
+          mode,
+          state: "recorded",
+        },
+        token,
+      );
+    } catch (error) {
+      if (alive.current)
+        setError(
+          error instanceof Error
+            ? error.message
+            : "The recording context could not be loaded.",
+        );
+    } finally {
+      committed.current = false;
+      if (alive.current) setBusy(false);
+    }
   };
   return (
     <dialog
@@ -273,6 +328,7 @@ export function ImportDialog({
             </label>
             <select
               id={providerId}
+              disabled={busy}
               value={provider}
               onChange={(event) => {
                 const next = event.target.value as Provider;
@@ -302,6 +358,7 @@ export function ImportDialog({
             </label>
             <select
               id={modeId}
+              disabled={busy}
               value={mode}
               onChange={(event) => setMode(event.target.value as Mode)}
             >
@@ -331,8 +388,15 @@ export function ImportDialog({
         )}
         <p className="import-privacy">
           <AudioLines size={16} />
-          Your file stays here until you choose Transcribe.
+          Your original file stays unchanged. Imported audio is temporary in
+          this tab.
         </p>
+        {cachedWords && (
+          <p className="field-hint">
+            Offline: use the last loaded words and keep this audio in the tab.
+            Reconnect before transcribing.
+          </p>
+        )}
       </div>
       <div className="modal-actions">
         <button className="secondary" onClick={close}>
@@ -354,8 +418,12 @@ export function ImportDialog({
             {checking ? "Checking connection…" : "Check connection"}
           </button>
         ) : (
-          <button className="primary" disabled={!canSend} onClick={send}>
-            Transcribe
+          <button
+            className="primary"
+            disabled={!canSend}
+            onClick={() => void send()}
+          >
+            {cachedWords ? "Keep with cached words" : "Transcribe"}
             <ArrowRight size={17} />
           </button>
         )}

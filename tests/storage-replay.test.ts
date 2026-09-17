@@ -21,6 +21,8 @@ it("replays a timed-out committed write through a fresh client after closing the
     await migrate(bootstrap, "db/migrations");
     const id = "11111111-1111-4111-8111-111111111111";
     await new Store(bootstrap).create(id, {
+      generation: 1,
+      areaId: null,
       title: "Before",
       body: "Before",
       originalText: "Before",
@@ -59,7 +61,13 @@ it("replays a timed-out committed write through a fresh client after closing the
         return store;
       },
     });
-    const body = { title: "After", body: "After", expectedRevision: 1 };
+    const body = {
+      generation: 1,
+      areaId: null,
+      title: "After",
+      body: "After",
+      expectedRevision: 1,
+    };
     const request = () =>
       new Request("http://localhost:3210/api/notes/" + id, {
         method: "PATCH",
@@ -79,9 +87,9 @@ it("replays a timed-out committed write through a fresh client after closing the
     expect(clients[0].closed).toBe(true);
     const replay = await api(request());
     expect(replay.status).toBe(409);
-    expect(classifyEditConflict(body, (await replay.json()).current)).toBe(
-      "confirmed",
-    );
+    expect(
+      classifyEditConflict(body, (await replay.json()).conflict.current),
+    ).toBe("confirmed");
     expect(clients).toHaveLength(2);
     expect(clients[1]).not.toBe(clients[0]);
     expect(clients[1].closed).toBe(true);

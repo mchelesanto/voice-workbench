@@ -23,6 +23,8 @@ function request(
   body?: unknown,
   headers: Record<string, string> = {},
 ) {
+  if (method === "GET" && /^\/notes(?:[/?]|$)/.test(path))
+    path += (path.includes("?") ? "&" : "?") + "generation=1";
   return new Request("http://localhost:3210/api" + path, {
     method,
     headers: {
@@ -57,6 +59,11 @@ describe("Local API", () => {
   it("guards every declared route before body, model, or storage access", async () => {
     const routes = [
       ["/config", "GET"],
+      ["/library-state", "GET"],
+      ["/library/reset", "POST"],
+      ["/library/reset/cancel", "POST"],
+      ["/areas", "GET"],
+      ["/areas/" + randomUUID(), "PUT"],
       ["/notes", "GET"],
       ["/notes/" + randomUUID(), "PUT"],
       ["/settings", "PUT"],
@@ -127,7 +134,9 @@ describe("Local API", () => {
   it("rejects unknown cursor fields before allocating storage", async () => {
     const cursor = Buffer.from(
       JSON.stringify({
-        v: 1,
+        v: 2,
+        generation: 1,
+        area: "all",
         updatedAt: "2026-01-01T00:00:00.000Z",
         id: "11111111-1111-4111-8111-111111111111",
         extra: true,
@@ -141,7 +150,9 @@ describe("Local API", () => {
   it("rejects non-canonical base64url while accepting the same canonical cursor bytes", async () => {
     const canonical = Buffer.from(
       JSON.stringify({
-        v: 1,
+        v: 2,
+        generation: 1,
+        area: "all",
         updatedAt: "2026-01-01T00:00:00.000Z",
         id: "11111111-1111-4111-8111-111111111111",
       }) + " ",
@@ -189,6 +200,8 @@ describe("Local API", () => {
   it("supports create, read, conditional edit, conflict, and delete through one contract", async () => {
     const id = randomUUID();
     const body = {
+      generation: 1,
+      areaId: null,
       title: "Gedanke",
       originalText: "Noch nicht veröffentlichen.",
       body: "Noch nicht veröffentlichen.",
@@ -199,6 +212,8 @@ describe("Local API", () => {
     };
     expect((await api(request("/notes/" + id, "PUT", body))).status).toBe(200);
     const edit = {
+      generation: 1,
+      areaId: null,
       title: "Fassung",
       body: "Zuerst prüfen.",
       expectedRevision: 1,
@@ -208,12 +223,18 @@ describe("Local API", () => {
     );
     const conflict = await api(request("/notes/" + id, "PATCH", edit));
     expect(conflict.status).toBe(409);
-    expect((await conflict.json()).current.revision).toBe(2);
+    expect((await conflict.json()).conflict.current.revision).toBe(2);
     const read = await api(request("/notes/" + id));
     expect((await read.json()).originalText).toBe(body.originalText);
     expect(
-      (await api(request("/notes/" + id, "DELETE", { expectedRevision: 2 })))
-        .status,
+      (
+        await api(
+          request("/notes/" + id, "DELETE", {
+            expectedRevision: 2,
+            generation: 1,
+          }),
+        )
+      ).status,
     ).toBe(204);
     expect((await api(request("/notes/" + id, "PUT", body))).status).toBe(410);
   });
@@ -251,6 +272,7 @@ function audioRequest(extra = false, invalid = false) {
   form.set("audio", new Blob([bytes], { type: "audio/wav" }), "sample.wav");
   form.set("provider", "google");
   form.set("mode", "verbatim");
+  form.set("generation", "1");
   form.set("vocabulary", JSON.stringify(["Begriff"]));
   if (extra) form.append("mode", "smart");
   return new Request("http://localhost:3210/api/transcribe", {
@@ -274,6 +296,7 @@ describe("HTTP audio and resource handling", () => {
     const response = await api(audioRequest());
     expect(response.status).toBe(200);
     expect(model.transcribe.mock.calls[0][0]).toMatchObject({
+      generation: 1,
       provider: "google",
       mode: "verbatim",
       vocabulary: ["Begriff"],
@@ -295,13 +318,25 @@ describe("HTTP audio and resource handling", () => {
       throw new Error("Not returned to user");
     });
     const first = api(
-      request("/enhance", "POST", { text: "A", preset: "clean" }),
+      request("/enhance", "POST", {
+        generation: 1,
+        text: "A",
+        preset: "clean",
+      }),
     );
     const second = api(
-      request("/enhance", "POST", { text: "B", preset: "clean" }),
+      request("/enhance", "POST", {
+        generation: 1,
+        text: "B",
+        preset: "clean",
+      }),
     );
     const third = await api(
-      request("/enhance", "POST", { text: "C", preset: "clean" }),
+      request("/enhance", "POST", {
+        generation: 1,
+        text: "C",
+        preset: "clean",
+      }),
     );
     expect(third.status).toBe(429);
     expect((await third.json()).error.code).toBe("busy");
@@ -315,8 +350,15 @@ describe("HTTP audio and resource handling", () => {
       preset: "clean",
     });
     expect(
-      (await api(request("/enhance", "POST", { text: "D", preset: "clean" })))
-        .status,
+      (
+        await api(
+          request("/enhance", "POST", {
+            generation: 1,
+            text: "D",
+            preset: "clean",
+          }),
+        )
+      ).status,
     ).toBe(200);
   });
   it("preserves successful responses when diagnostics fail", async () => {
@@ -330,4 +372,108 @@ describe("HTTP audio and resource handling", () => {
     });
     expect((await handle(request("/settings"))).status).toBe(200);
   });
+});
+
+it("fences model preflight and exposes explicit reset receipts", async () => {
+  const first = await api(request("/library-state"));
+  expect(await first.json()).toEqual({ generation: 1, lastResetAt: null });
+  const operationId = randomUUID();
+  const reset = await api(
+    request("/library/reset", "POST", {
+      operationId,
+      expectedGeneration: 1,
+      confirmation: "DELETE ALL NOTES",
+    }),
+  );
+  expect(reset.status).toBe(200);
+  expect(await reset.json()).toMatchObject({
+    generation: 2,
+    fromGeneration: 1,
+    deletedNoteCount: 0,
+  });
+  const stale = await api(audioRequest());
+  expect(stale.status).toBe(409);
+  expect((await stale.json()).conflict).toMatchObject({
+    kind: "library",
+    current: { generation: 2 },
+  });
+  expect(model.transcribe).not.toHaveBeenCalled();
+  const response = await api(
+    request("/enhance", "POST", {
+      generation: 1,
+      text: "Test",
+      preset: "clean",
+    }),
+  );
+  expect(response.status).toBe(409);
+  expect(model.enhance).not.toHaveBeenCalled();
+  const cancelledId = randomUUID();
+  const cancel = await api(
+    request("/library/reset/cancel", "POST", {
+      operationId: cancelledId,
+      expectedGeneration: 2,
+    }),
+  );
+  expect((await cancel.json()).state).toBe("cancelled");
+  const retry = await api(
+    request("/library/reset", "POST", {
+      operationId: cancelledId,
+      expectedGeneration: 2,
+      confirmation: "DELETE ALL NOTES",
+    }),
+  );
+  expect(retry.status).toBe(409);
+  expect((await retry.json()).conflict).toMatchObject({
+    kind: "reset",
+    current: {
+      state: "cancelled",
+      operationId: cancelledId,
+      expectedGeneration: 2,
+    },
+  });
+});
+it("requires explicit generation and reset confirmation before accessing content", async () => {
+  const raw = new Request(config.origin + "/api/notes", {
+    headers: { host: "localhost:3210" },
+  });
+  expect((await api(raw)).status).toBe(400);
+  expect(
+    (
+      await api(
+        request("/library/reset", "POST", {
+          operationId: randomUUID(),
+          expectedGeneration: 1,
+        }),
+      )
+    ).status,
+  ).toBe(400);
+  expect(storeCalls).not.toHaveBeenCalled();
+});
+it("publishes provider vocabulary limits and rejects overflow before model work", async () => {
+  const config = await (await api(request("/config"))).json();
+  expect(
+    config.providers.map(
+      (p: { maxVocabularyTerms: number }) => p.maxVocabularyTerms,
+    ),
+  ).toEqual([1000, 100]);
+  const req = audioRequest();
+  const form = await req.formData();
+  form.set("provider", "mistral");
+  form.set(
+    "vocabulary",
+    JSON.stringify(Array.from({ length: 101 }, (_, i) => "Word " + i)),
+  );
+  const res = await api(
+    new Request(req.url, {
+      method: "POST",
+      headers: {
+        host: "localhost:3210",
+        origin: "http://localhost:3210",
+        "x-voice-workbench": "1",
+      },
+      body: form,
+    }),
+  );
+  expect(res.status).toBe(400);
+  expect(model.transcribe).not.toHaveBeenCalled();
 });

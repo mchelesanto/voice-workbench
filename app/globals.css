@@ -1851,7 +1851,7 @@ pre {
   overflow-wrap: anywhere;
 }
 .recovery-heading > span {
-  color: var(--amber);
+  color: var(--muted);
   font-size: 12px;
   white-space: nowrap;
 }
@@ -2942,4 +2942,201 @@ pre {
   .vocabulary-conflict-actions > button {
     flex: 1;
   }
+}
+
+/* Recovery keeps the inventory and controls visible while copies scroll. */
+.recovery-modal[open] {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 24px;
+}
+.recovery-modal > .modal-heading,
+.recovery-summary,
+.recovery-inventory,
+.recovery-storage {
+  flex-shrink: 0;
+}
+.recovery-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  color: var(--muted);
+}
+.recovery-summary p {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  margin: 0;
+}
+.recovery-summary svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+.recovery-summary strong {
+  display: block;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 550;
+}
+.recovery-summary small {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.recovery-inventory {
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 16px 0 10px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.recovery-inventory > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.recovery-scroll {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.recovery-scroll .local-list {
+  margin-bottom: 12px;
+}
+.recovery-context {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.recovery-preview {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.recovery-storage {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  margin-top: 4px;
+}
+.recovery-storage summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--ink);
+}
+.recovery-storage summary > span {
+  color: var(--muted);
+  font-size: 12px;
+  margin-left: 10px;
+}
+.recovery-storage > button {
+  margin-top: 12px;
+}
+@media (max-width: 700px) {
+  .recovery-modal[open] {
+    padding: 18px;
+    max-height: calc(100dvh - 24px);
+  }
+  .recovery-summary {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .recovery-summary small {
+    margin-top: 0;
+  }
+  .recovery-inventory {
+    padding-top: 12px;
+  }
+  .recovery-storage summary > span {
+    display: block;
+    margin: 4px 0 0 17px;
+  }
+  .recovery-scroll .recovery-group {
+    margin-top: 12px;
+  }
+}
+
+.capture-pause {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.capture-discard-prompt {
+  width: 440px;
+  max-width: calc(100vw - 40px);
+  max-height: calc(100dvh - 40px);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper);
+  color: var(--ink);
+  padding: 28px;
+  box-shadow: 0 24px 80px #1422403d;
+}
+.capture-discard-prompt::backdrop {
+  background: #16203366;
+}
+.capture-discard-prompt h2 {
+  font-size: 25px;
+  line-height: 1.2;
+  letter-spacing: -0.6px;
+  margin: 10px 0;
+}
+.capture-discard-prompt p {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--muted);
+}
+.capture-discard-actions {
+  display: flex;
+  gap: 10px;
+  margin: 22px 0 18px;
+}
+.capture-discard-actions button {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 13px;
+  min-height: 46px;
+  padding: 10px;
+}
+.capture-discard-prompt > small {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+@media (max-width: 600px) {
+  .capture-discard-prompt {
+    padding: 22px;
+  }
+  .capture-discard-prompt h2 {
+    font-size: 23px;
+  }
+}
+
+.recovery-heading > .confirmed {
+  color: var(--green);
+}
+.recovery-heading > .attention {
+  color: var(--amber);
+}
+
+.capture-discard-prompt .stay-paused {
+  display: block;
+  margin: -8px auto 12px;
+  min-height: 36px;
+  font-size: 13px;
+  color: var(--muted);
 }

@@ -50,6 +50,15 @@ export function readAudioFile(
   });
 }
 
+export function validateImportSize(size: number) {
+  if (!size)
+    throw new Error(
+      "This file is empty. Choose an audio file with a recording.",
+    );
+  if (size > LIMITS.maxAudioBytes)
+    throw new Error("This file exceeds 500 MB. Choose a smaller audio file.");
+}
+
 export async function inspectAudioFile(
   file: File,
   signal: AbortSignal,
@@ -59,12 +68,7 @@ export async function inspectAudioFile(
   ) => Promise<ArrayBuffer> = readAudioFile,
 ): Promise<AudioImport> {
   signal.throwIfAborted();
-  if (!file.size)
-    throw new Error(
-      "This file is empty. Choose an audio file with a recording.",
-    );
-  if (file.size > LIMITS.maxAudioBytes)
-    throw new Error("This file exceeds 500 MB. Choose a smaller audio file.");
+  validateImportSize(file.size);
   const bytes = new Uint8Array(await read(file, signal));
   signal.throwIfAborted();
   const mime = detectedAudioMime(bytes);

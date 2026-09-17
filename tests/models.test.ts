@@ -10,6 +10,7 @@ const config = {
   fireworksKey: "test-mistral",
 };
 const input = {
+  generation: 1,
   audio: new Uint8Array(44),
   provider: "google" as const,
   mode: "verbatim" as const,
@@ -105,7 +106,12 @@ describe("Provider contract", () => {
     const service = createModels(config, { transcribe: vi.fn(), generateText });
     const source = "Zuerst prüfen, noch nicht veröffentlichen.";
     expect(
-      (await service.enhance({ text: source, preset: "clean" }, signal())).text,
+      (
+        await service.enhance(
+          { generation: 1, text: source, preset: "clean" },
+          signal(),
+        )
+      ).text,
     ).toBe("Vollständig");
     expect(generateText.mock.calls[0][0]).toMatchObject({
       prompt: source,
@@ -117,7 +123,10 @@ describe("Provider contract", () => {
     ]) {
       generateText.mockResolvedValue({ text });
       await expect(
-        service.enhance({ text: source, preset: "clean" }, signal()),
+        service.enhance(
+          { generation: 1, text: source, preset: "clean" },
+          signal(),
+        ),
       ).rejects.toMatchObject({ code });
     }
   });

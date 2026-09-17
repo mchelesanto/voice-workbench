@@ -7,16 +7,22 @@ export function AudioPlayer({
   sourceKey,
   onDuration,
   onFailure,
+  authorize,
   errorMessage = "This recording could not be played here. Download the audio to try another player.",
 }: {
   blob: Blob;
   sourceKey: string;
   onDuration: (result: PlaybackDuration) => void;
   onFailure?: (sourceKey: string) => void;
+  authorize?: () => Promise<void>;
   errorMessage?: string;
 }) {
   const ref = useRef<HTMLAudioElement>(null);
   const [sourceBlob] = useState(blob);
+  const authorization = useRef(authorize);
+  useEffect(() => {
+    authorization.current = authorize;
+  }, [authorize]);
   const [status, setStatus] = useState<"preparing" | "ready" | "error">(
     "preparing",
   );
@@ -42,6 +48,30 @@ export function AudioPlayer({
       release();
       onFailure?.(sourceKey);
     };
+    let allowedOnce = false;
+    let checking = false;
+    const play = () => {
+      if (!authorization.current) return;
+      if (allowedOnce) {
+        allowedOnce = false;
+        return;
+      }
+      element.pause();
+      if (checking) return;
+      checking = true;
+      void authorization
+        .current()
+        .then(() => {
+          if (controller.signal.aborted) return;
+          allowedOnce = true;
+          return element.play();
+        })
+        .catch(fail)
+        .finally(() => {
+          checking = false;
+        });
+    };
+    element.addEventListener("play", play);
     element.addEventListener("error", fail);
     element.src = url;
     void prepareAudioPlayback(element, controller.signal)
@@ -54,6 +84,7 @@ export function AudioPlayer({
       .catch(fail);
     return () => {
       controller.abort();
+      element.removeEventListener("play", play);
       release();
     };
   }, [sourceBlob, sourceKey, onDuration, onFailure]);

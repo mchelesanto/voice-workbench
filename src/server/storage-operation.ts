@@ -4,8 +4,9 @@ import type { RuntimeConfig } from "./config";
 import { ApiError } from "./errors";
 import { untilAborted } from "./model-slots";
 import { Store } from "./store";
+import { LIMITS } from "../shared/contracts";
 
-export const STORAGE_DEADLINE_MS = 12000;
+export const STORAGE_DEADLINE_MS = LIMITS.storageTimeoutMs;
 
 export function createRemoteStore(config: RuntimeConfig, signal: AbortSignal) {
   const db = createClient({

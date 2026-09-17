@@ -4,24 +4,24 @@ import type { RecordingPhase } from "./recording-recovery";
 export function processingPresentation(
   phase: RecordingPhase,
   selectedProvider: Provider,
-  durable: boolean,
+  textDurable: boolean,
 ) {
   const provider = selectedProvider === "google" ? "Google" : "Mistral";
-  const preparing = phase === "saving_audio" && durable;
+  const preparing = phase === "preparing_audio";
   const transcribing = phase === "transcribing";
   const savingResult = phase === "saving_transcript" || phase === "saving_note";
   const stage = savingResult ? 2 : transcribing || preparing ? 1 : 0;
   return {
     provider,
     title: transcribing
-      ? `${provider} is transcribing.`
+      ? `${provider} is processing.`
       : phase === "saving_note"
         ? "Saving your note."
         : phase === "saving_transcript"
           ? "Your words are here."
           : preparing
             ? "Preparing transcription."
-            : "Keeping your audio safe.",
+            : "Preparing your recording.",
     detail: transcribing
       ? "Sending and processing your recording. Your transcript will appear here."
       : phase === "saving_note"
@@ -29,16 +29,14 @@ export function processingPresentation(
         : phase === "saving_transcript"
           ? "Saving the transcript on this device before syncing."
           : preparing
-            ? "Your audio is saved. Preparing the transcription request."
-            : "Saving this recording on your device before anything is sent.",
-    storage: durable
-      ? savingResult
-        ? "Transcript saved on this device"
-        : "Audio saved on this device"
-      : "Keep this tab open while your local copy is saved",
+            ? "Audio is ready in this tab. Checking the recording context."
+            : "Audio stays in this tab. Closing or reloading removes it.",
+    storage: textDurable
+      ? "Transcript saved on this device"
+      : "Audio is temporary in this tab",
     canCancel: transcribing,
     steps: [
-      { label: "Audio", detail: stage === 0 ? "Saving locally" : "Captured" },
+      { label: "Audio", detail: "Ready in this tab" },
       {
         label: "Transcribe",
         detail:

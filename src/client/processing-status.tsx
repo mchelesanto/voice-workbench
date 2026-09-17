@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { AudioLines, Check, Download, ShieldCheck } from "lucide-react";
-import type { Recording } from "./local-store";
+import type { Recording } from "./recording";
 import type { RecordingPhase } from "./recording-recovery";
 import { duration } from "./export";
 import { processingPresentation } from "./processing-state";
@@ -9,14 +9,14 @@ import { processingPresentation } from "./processing-state";
 export function ProcessingStatus({
   recording,
   phase,
-  durable,
+  textDurable,
   cancel,
   downloadAudio,
   downloadTranscript,
 }: {
   recording: Recording;
   phase: RecordingPhase;
-  durable: boolean;
+  textDurable: boolean;
   cancel: () => void;
   downloadAudio: () => void;
   downloadTranscript: () => void;
@@ -24,7 +24,7 @@ export function ProcessingStatus({
   const [started] = useState(() => performance.now());
   const [elapsed, setElapsed] = useState(0);
   const title = useRef<HTMLHeadingElement>(null);
-  const view = processingPresentation(phase, recording.provider, durable);
+  const view = processingPresentation(phase, recording.provider, textDurable);
   useEffect(() => {
     title.current?.focus({ preventScroll: true });
     const timer = setInterval(
@@ -85,7 +85,7 @@ export function ProcessingStatus({
           {view.canCancel && (
             <>
               <button className="secondary" onClick={cancel}>
-                Cancel transcription
+                Cancel processing
               </button>
               <p>Cancel keeps your audio. Provider charges may still apply.</p>
             </>

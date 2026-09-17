@@ -1,6 +1,6 @@
 # Vocabulary editor
 
-The global dictionary uses a reusable controlled chip editor. One chip is one word or phrase; internal spaces remain part of that phrase. The current shared dictionary limit is 100 terms from LIMITS. This increment changes no schema, audio retention, or area/reset behavior.
+The global dictionary uses a reusable controlled chip editor. One chip is one word or phrase; internal spaces remain part of that phrase. The shared dictionary limit is 1,000 terms from LIMITS. Provider-specific request caps and future area scope follow `workspace-management.md`; alphabetical display never truncates a list to fit a provider.
 
 Display uses an English, numeric, case-insensitive Intl.Collator with a variant-sensitive tie-breaker. Only a copy is sorted. Rendering preserves saved input order and provider payloads. Settings conflicts compare normalized term sets: the same words in a different stored order already satisfy the requested vocabulary, so the canonical server version is adopted without asking the user to resolve an invisible difference. Case/spelling changes remain real conflicts. Existing shared validation remains authoritative: trim, NFC, exact deduplication, up to 80 characters per term and no commas/control characters. The installed Zod length check counts Unicode code points; the UI does not impose a stricter UTF-16 cap. Forbidden characters are checked on the raw segment before trimming, using the same predicate as the shared schema. Canonical terms are then normalized and validated before sending.
 

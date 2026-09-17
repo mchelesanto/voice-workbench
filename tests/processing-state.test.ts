@@ -5,9 +5,9 @@ describe("Truthful processing presentation", () => {
   it.each(["google", "mistral"] as const)(
     "identifies the bound %s provider during its request",
     (provider) => {
-      const view = processingPresentation("transcribing", provider, true);
+      const view = processingPresentation("transcribing", provider, false);
       expect(view.title).toBe(
-        `${provider === "google" ? "Google" : "Mistral"} is transcribing.`,
+        `${provider === "google" ? "Google" : "Mistral"} is processing.`,
       );
       expect(view.canCancel).toBe(true);
       expect(view.steps.map((s) => s.state)).toEqual([
@@ -15,20 +15,20 @@ describe("Truthful processing presentation", () => {
         "current",
         "pending",
       ]);
-      expect(view.storage).toBe("Audio saved on this device");
+      expect(view.storage).toBe("Audio is temporary in this tab");
     },
   );
-  it.each(["saving_audio", "saving_transcript", "saving_note"] as const)(
+  it.each(["preparing_audio", "saving_transcript", "saving_note"] as const)(
     "does not promise durability or offer model cancellation while %s",
     (phase) => {
       const view = processingPresentation(phase, "google", false);
       expect(view.canCancel).toBe(false);
       expect(view.storage).not.toMatch(/saved on this device/i);
-      expect(view.storage).toContain("Keep this tab open");
+      expect(view.storage).toContain("temporary in this tab");
     },
   );
-  it("distinguishes confirmed audio from preparation before the model call", () => {
-    const view = processingPresentation("saving_audio", "mistral", true);
+  it("describes temporary audio while preparing the model call", () => {
+    const view = processingPresentation("preparing_audio", "mistral", false);
     expect(view.title).toBe("Preparing transcription.");
     expect(view.canCancel).toBe(false);
     expect(view.steps[0].state).toBe("done");
@@ -36,7 +36,7 @@ describe("Truthful processing presentation", () => {
       state: "current",
       detail: "Preparing request",
     });
-    expect(view.storage).toBe("Audio saved on this device");
+    expect(view.storage).toBe("Audio is temporary in this tab");
   });
   it("keeps device confirmation distinct from pending cloud storage", () => {
     const view = processingPresentation("saving_note", "mistral", true);

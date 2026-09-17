@@ -120,7 +120,7 @@ it("keeps raw text literal and quotes frontmatter without unsafe filenames", () 
   expect(exported).toContain("<script>literal</script>");
 });
 
-it("gives transcription enough time without extending refinement or data deadlines", async () => {
+it("includes generation preflight without changing the data deadline", async () => {
   const timeout = vi
     .spyOn(AbortSignal, "timeout")
     .mockImplementation(() => new AbortController().signal);
@@ -133,12 +133,12 @@ it("gives transcription enough time without extending refinement or data deadlin
       method: "POST",
       operation: "model",
     });
-    expect(timeout).toHaveBeenLastCalledWith(1870000);
+    expect(timeout).toHaveBeenLastCalledWith(1882000);
     await request("/enhance", z.object({ ok: z.boolean() }), {
       method: "POST",
       operation: "model",
     });
-    expect(timeout).toHaveBeenLastCalledWith(150000);
+    expect(timeout).toHaveBeenLastCalledWith(162000);
     await request("/config", z.object({ ok: z.boolean() }));
     expect(timeout).toHaveBeenLastCalledWith(20000);
   } finally {
@@ -146,3 +146,18 @@ it("gives transcription enough time without extending refinement or data deadlin
     timeout.mockRestore();
   }
 });
+
+it.each(["/library/reset", "/library/reset/cancel"])(
+  "never automatically retries %s even without an operation hint",
+  async (path) => {
+    const fetcher = vi.fn().mockRejectedValue(new TypeError("Connection lost"));
+    vi.stubGlobal("fetch", fetcher);
+    await expect(
+      request(path, z.unknown(), {
+        method: "POST",
+        body: { operationId: "fixture", expectedGeneration: 1 },
+      }),
+    ).rejects.toThrow();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  },
+);

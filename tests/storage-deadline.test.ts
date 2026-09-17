@@ -62,6 +62,8 @@ it("keeps a committed write replayable after its response deadline", async () =>
     const store = new Store(db);
     const id = "11111111-1111-4111-8111-111111111111";
     await store.create(id, {
+      generation: 1,
+      areaId: null,
       title: "Before",
       body: "Before",
       originalText: "Before",
@@ -86,7 +88,13 @@ it("keeps a committed write replayable after its response deadline", async () =>
       getStore: () => store,
       getModels: vi.fn(),
     });
-    const body = { title: "After", body: "After", expectedRevision: 1 };
+    const body = {
+      generation: 1,
+      areaId: null,
+      title: "After",
+      body: "After",
+      expectedRevision: 1,
+    };
     const request = () =>
       new Request(config.origin + "/api/notes/" + id, {
         method: "PATCH",
@@ -106,9 +114,9 @@ it("keeps a committed write replayable after its response deadline", async () =>
     expect((await timeout.json()).error.code).toBe("storage_timeout");
     const replay = await api(request());
     expect(replay.status).toBe(409);
-    const current = (await replay.json()).current;
+    const current = (await replay.json()).conflict.current;
     expect(classifyEditConflict(body, current)).toBe("confirmed");
-    expect((await store.get(id)).revision).toBe(2);
+    expect((await store.get(id, 1)).revision).toBe(2);
     release();
     await vi.advanceTimersByTimeAsync(0);
   } finally {
@@ -138,7 +146,7 @@ it("stops a canceled API storage request even when the store ignores cancellatio
   vi.spyOn(store, "list").mockImplementation(
     () =>
       new Promise((resolve) => {
-        finish = () => resolve({ items: [], nextCursor: null });
+        finish = () => resolve({ generation: 1, items: [], nextCursor: null });
       }),
   );
   const api = createApi({
@@ -150,7 +158,7 @@ it("stops a canceled API storage request even when the store ignores cancellatio
     },
   });
   const pending = api(
-    new Request(config.origin + "/api/notes", {
+    new Request(config.origin + "/api/notes?generation=1", {
       headers: { host: "localhost:3210" },
       signal: client.signal,
     }),

@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Mode, Provider } from "../shared/contracts";
-import type { Recording } from "./local-store";
+import type { Recording, CaptureContext } from "./recording";
 import {
   RecorderController,
   initialRecorderState,
@@ -42,13 +42,16 @@ function inputMeter(stream: MediaStream): InputMeter {
 
 export function useRecorder(
   onReady: (recording: Recording, damaged: boolean) => void,
+  onAbandoned: (context: CaptureContext) => void,
 ) {
   const [state, setState] = useState(initialRecorderState);
   const controller = useRef<RecorderController | null>(null);
   const callback = useRef(onReady);
+  const abandoned = useRef(onAbandoned);
   useEffect(() => {
     callback.current = onReady;
-  }, [onReady]);
+    abandoned.current = onAbandoned;
+  }, [onReady, onAbandoned]);
   useEffect(() => {
     const current = new RecorderController(
       {
@@ -77,6 +80,7 @@ export function useRecorder(
       },
       setState,
       (recording, damaged) => callback.current(recording, damaged),
+      (context) => abandoned.current(context),
     );
     controller.current = current;
     return () => {
@@ -87,13 +91,24 @@ export function useRecorder(
   return {
     ...state,
     start: useCallback(
-      (provider: Provider, mode: Mode) =>
-        controller.current?.start(provider, mode),
+      (provider: Provider, mode: Mode, context: CaptureContext) =>
+        controller.current?.start(provider, mode, context),
+      [],
+    ),
+    quarantineAndStop: useCallback(
+      () => controller.current?.quarantineAndStop(),
       [],
     ),
     stop: useCallback(() => controller.current?.stop(), []),
     requestDiscard: useCallback(() => controller.current?.requestDiscard(), []),
-    keepRecording: useCallback(() => controller.current?.keepRecording(), []),
+    pause: useCallback(() => controller.current?.pause(), []),
+    resume: useCallback(() => controller.current?.resume(), []),
+    dismissDiscard: useCallback(() => controller.current?.dismissDiscard(), []),
+    continueCapture: useCallback(
+      (expected: "paused" | "review") =>
+        controller.current?.continueCapture(expected),
+      [],
+    ),
     discard: useCallback(() => controller.current?.discard(), []),
     cancelPermission: useCallback(() => controller.current?.discard(), []),
     clearError: useCallback(() => controller.current?.clearError(), []),

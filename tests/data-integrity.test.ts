@@ -28,6 +28,8 @@ describe("Data and configuration integrity", () => {
       await migrate(db, "db/migrations");
       const store = new Store(db);
       await store.create(randomUUID(), {
+        generation: 1,
+        areaId: null,
         title: "Emoji",
         originalText: "Original",
         body: "a".repeat(139) + "😀Z",
@@ -36,7 +38,7 @@ describe("Data and configuration integrity", () => {
         mode: "verbatim",
         durationMs: 1,
       });
-      const preview = (await store.list()).items[0].preview;
+      const preview = (await store.list(1)).items[0].preview;
       expect(preview.isWellFormed()).toBe(true);
       expect([...preview]).toHaveLength(140);
       expect(preview.endsWith("😀")).toBe(true);
@@ -51,6 +53,8 @@ describe("Data and configuration integrity", () => {
       const store = new Store(db);
       const id = randomUUID();
       const input = {
+        generation: 1,
+        areaId: null,
         title: "Alt",
         originalText: "Original",
         body: "Alt",
@@ -62,15 +66,25 @@ describe("Data and configuration integrity", () => {
       const checked = createNoteSchema.parse(input);
       await store.create(id, checked);
       await store.update(id, {
+        generation: 1,
+        areaId: null,
         title: "Neu",
         body: "Neu",
         expectedRevision: 1,
       });
-      expect((await store.get(id)).model).toBe("voxtral-mini-2602");
+      expect((await store.get(id, 1)).model).toBe("voxtral-mini-2602");
       expect((await store.create(id, checked)).body).toBe("Neu");
       await expect(
-        store.update(id, { title: "Alt", body: "Alt", expectedRevision: 1 }),
-      ).rejects.toMatchObject({ current: { model: "voxtral-mini-2602" } });
+        store.update(id, {
+          generation: 1,
+          areaId: null,
+          title: "Alt",
+          body: "Alt",
+          expectedRevision: 1,
+        }),
+      ).rejects.toMatchObject({
+        conflict: { kind: "note", current: { model: "voxtral-mini-2602" } },
+      });
     } finally {
       db.close();
     }
@@ -83,6 +97,7 @@ describe("Data and configuration integrity", () => {
     });
     const result = await models.transcribe(
       {
+        generation: 1,
         provider: "google",
         mode: "verbatim",
         vocabulary: [],

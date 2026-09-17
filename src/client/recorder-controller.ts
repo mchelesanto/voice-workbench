@@ -1,10 +1,11 @@
 import { PROVIDERS, type Mode, type Provider } from "../shared/contracts";
-import type { Recording } from "./local-store";
+import type { Recording, CaptureContext } from "./recording";
 
 export type RecorderPhase =
   | "idle"
   | "permission"
   | "recording"
+  | "paused"
   | "stopping"
   | "review";
 export type RecorderSnapshot = {
@@ -25,6 +26,8 @@ export type RecorderDependencies = {
   now: () => number;
 };
 type Session = {
+  context: CaptureContext;
+  quarantined: boolean;
   provider: Provider;
   mode: Mode;
   chunks: Blob[];
@@ -35,6 +38,9 @@ type Session = {
   timer?: ReturnType<typeof setInterval>;
   started?: number;
   ended?: number;
+  pausedAt?: number;
+  pausedMs: number;
+  trackStates?: { track: MediaStreamTrack; enabled: boolean }[];
   damaged: boolean;
   released: boolean;
   completed?: Recording;
@@ -58,6 +64,7 @@ export class RecorderController {
     private readonly dependencies: RecorderDependencies,
     private readonly changed: (state: RecorderSnapshot) => void,
     private readonly ready: (recording: Recording, damaged: boolean) => void,
+    private readonly abandoned: (context: CaptureContext) => void = () => {},
   ) {}
   private update(next: Partial<RecorderSnapshot>) {
     this.state = { ...this.state, ...next };
@@ -81,15 +88,59 @@ export class RecorderController {
       session.recorder.onerror = null;
     }
   }
-  async start(provider: Provider, mode: Mode) {
+  private elapsed(session: Session) {
+    return Math.max(
+      0,
+      Math.round(
+        (session.ended ?? session.pausedAt ?? this.dependencies.now()) -
+          session.started! -
+          session.pausedMs,
+      ),
+    );
+  }
+  private startTimer(session: Session) {
+    clearInterval(session.timer);
+    session.timer = setInterval(() => {
+      if (this.active !== session || this.state.phase !== "recording") return;
+      const elapsed = this.elapsed(session);
+      let level = 0;
+      try {
+        level = session.meter?.read() ?? 0;
+      } catch {
+        try {
+          session.meter?.close();
+        } catch {
+          /* Capture remains independent of metering. */
+        }
+        session.meter = undefined;
+      }
+      this.update({
+        elapsed,
+        meterAvailable: !!session.meter,
+        levels: [
+          ...this.state.levels.slice(1),
+          Number.isFinite(level) ? Math.max(0, Math.min(1, level)) : 0,
+        ],
+      });
+      if (
+        elapsed >=
+        PROVIDERS[session.provider].maxRecordingSeconds * 1000 - 1000
+      )
+        this.stop();
+    }, 100);
+  }
+  async start(provider: Provider, mode: Mode, context: CaptureContext) {
     if (this.active) return;
     const session: Session = {
+      context: { ...context, vocabulary: [...context.vocabulary] },
+      quarantined: false,
       provider,
       mode,
       chunks: [],
       bytes: 0,
       damaged: false,
       released: false,
+      pausedMs: 0,
     };
     this.active = session;
     this.state = initialRecorderState();
@@ -112,8 +163,11 @@ export class RecorderController {
         if (
           session.bytes >=
           PROVIDERS[session.provider].maxAudioBytes - 1024 * 1024
-        )
+        ) {
+          if (this.state.phase === "paused")
+            this.update({ confirmDiscard: true });
           this.stop();
+        }
       };
       recorder.onerror = () => {
         if (this.active !== session) return;
@@ -133,40 +187,11 @@ export class RecorderController {
         /* Capture can work without a meter. */
       }
       this.update({ phase: "recording", meterAvailable: !!session.meter });
-      session.timer = setInterval(() => {
-        if (this.active !== session || this.state.phase !== "recording") return;
-        const elapsed = Math.max(
-          0,
-          Math.round(this.dependencies.now() - session.started!),
-        );
-        let level = 0;
-        try {
-          level = session.meter?.read() ?? 0;
-        } catch {
-          try {
-            session.meter?.close();
-          } catch {
-            /* Capture remains independent of metering. */
-          }
-          session.meter = undefined;
-        }
-        this.update({
-          elapsed,
-          meterAvailable: !!session.meter,
-          levels: [
-            ...this.state.levels.slice(1),
-            Number.isFinite(level) ? Math.max(0, Math.min(1, level)) : 0,
-          ],
-        });
-        if (
-          elapsed >=
-          PROVIDERS[session.provider].maxRecordingSeconds * 1000 - 1000
-        )
-          this.stop();
-      }, 100);
+      this.startTimer(session);
     } catch (error) {
       if (this.active !== session) return;
       this.active = undefined;
+      this.abandoned(session.context);
       this.detach(session);
       this.release(session);
       this.update({
@@ -182,9 +207,17 @@ export class RecorderController {
   }
   stop() {
     const session = this.active;
-    if (!session?.recorder || this.state.phase !== "recording") return;
-    session.ended = this.dependencies.now();
-    this.update({ phase: "stopping" });
+    if (
+      !session?.recorder ||
+      !["recording", "paused"].includes(this.state.phase)
+    )
+      return;
+    session.ended = session.pausedAt ?? this.dependencies.now();
+    this.update({
+      phase: "stopping",
+      elapsed: this.elapsed(session),
+      meterAvailable: false,
+    });
     try {
       if (session.recorder.state !== "inactive") session.recorder.stop();
     } catch {
@@ -193,6 +226,9 @@ export class RecorderController {
         error: "Recording was interrupted. You can recover the captured audio.",
       });
       this.finished(session);
+    } finally {
+      // End microphone access now; queued final data still belongs to this session.
+      this.release(session);
     }
   }
   private finished(session: Session) {
@@ -206,12 +242,10 @@ export class RecorderController {
     }
     this.detach(session);
     this.release(session);
-    const durationMs = Math.max(
-      0,
-      Math.round((session.ended ?? this.dependencies.now()) - session.started!),
-    );
+    const durationMs = this.elapsed(session);
     if (!session.chunks.length) {
       this.active = undefined;
+      this.abandoned(session.context);
       this.update({
         phase: "idle",
         confirmDiscard: false,
@@ -222,12 +256,12 @@ export class RecorderController {
     const blob = new Blob(session.chunks, { type: session.recorder!.mimeType });
     session.chunks = [];
     session.completed = {
+      ...session.context,
+      readOnly: session.quarantined,
       kind: "recording",
-      id: crypto.randomUUID(),
       blob,
       mime: blob.type,
       durationMs,
-      createdAt: new Date().toISOString(),
       provider: session.provider,
       mode: session.mode,
       state: "recorded",
@@ -244,30 +278,127 @@ export class RecorderController {
     if (this.active !== session || !session.completed) return;
     this.active = undefined;
     this.update({ phase: "idle", confirmDiscard: false });
-    this.ready(session.completed, session.damaged);
+    this.ready(
+      { ...session.completed, readOnly: session.quarantined },
+      session.damaged || session.quarantined,
+    );
+  }
+  pause() {
+    const session = this.active;
+    if (!session?.recorder || this.state.phase !== "recording") return;
+    session.pausedAt = this.dependencies.now();
+    clearInterval(session.timer);
+    session.trackStates = session
+      .stream!.getTracks()
+      .map((track) => ({ track, enabled: track.enabled }));
+    session.trackStates.forEach(({ track }) => {
+      track.enabled = false;
+    });
+    this.update({
+      phase: "paused",
+      elapsed: this.elapsed(session),
+      meterAvailable: false,
+    });
+    try {
+      session.recorder.pause();
+    } catch {
+      session.damaged = true;
+      this.update({
+        error:
+          "Recording could not pause. The captured audio is available for recovery.",
+      });
+      this.stop();
+    }
+  }
+  resume() {
+    const session = this.active;
+    if (
+      !session?.recorder ||
+      this.state.phase !== "paused" ||
+      this.state.confirmDiscard
+    )
+      return;
+    if (
+      this.elapsed(session) >=
+        PROVIDERS[session.provider].maxRecordingSeconds * 1000 - 1000 ||
+      session.bytes >= PROVIDERS[session.provider].maxAudioBytes - 1024 * 1024
+    ) {
+      this.update({ confirmDiscard: true });
+      this.stop();
+      return;
+    }
+    try {
+      if (
+        session
+          .stream!.getTracks()
+          .some((track) => track.readyState === "ended")
+      )
+        throw new Error("Microphone ended");
+      session.recorder.resume();
+      session.pausedMs += Math.max(
+        0,
+        this.dependencies.now() - session.pausedAt!,
+      );
+      session.pausedAt = undefined;
+      session.trackStates?.forEach(({ track, enabled }) => {
+        track.enabled = enabled;
+      });
+      session.trackStates = undefined;
+      this.update({ phase: "recording", meterAvailable: !!session.meter });
+      this.startTimer(session);
+    } catch {
+      session.damaged = true;
+      this.update({
+        error:
+          "Recording could not resume. The captured audio is available for recovery.",
+      });
+      this.stop();
+    }
   }
   requestDiscard() {
     if (this.state.phase === "permission") this.discard();
     else if (
-      this.state.phase === "recording" ||
-      this.state.phase === "stopping"
-    )
+      ["recording", "paused", "stopping", "review"].includes(this.state.phase)
+    ) {
       this.update({ confirmDiscard: true });
+      this.pause();
+    }
   }
-  keepRecording() {
+  dismissDiscard() {
+    if (this.state.phase === "paused") this.update({ confirmDiscard: false });
+  }
+  continueCapture(expected: "paused" | "review") {
     if (
       !this.active ||
       !this.state.confirmDiscard ||
-      !["recording", "review"].includes(this.state.phase)
+      this.state.phase !== expected
     )
       return;
+    if (this.state.phase === "review" && this.active.completed) {
+      this.update({ confirmDiscard: false });
+      this.deliver(this.active);
+    } else if (this.state.phase === "paused") {
+      this.update({ confirmDiscard: false });
+      this.resume();
+    }
+  }
+  quarantineAndStop() {
+    const session = this.active;
+    if (!session) return;
+    if (this.state.phase === "permission") {
+      this.discard();
+      return;
+    }
+    session.quarantined = true;
     this.update({ confirmDiscard: false });
-    if (this.active.completed) this.deliver(this.active);
+    if (session.completed) this.deliver(session);
+    else this.stop();
   }
   discard(notify = true) {
     const session = this.active;
     this.active = undefined;
     if (session) {
+      this.abandoned(session.context);
       this.detach(session);
       try {
         if (session.recorder && session.recorder.state !== "inactive")

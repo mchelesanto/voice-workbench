@@ -18,6 +18,12 @@ import {
   deleteSchema,
   settingsEditSchema,
   enhancementSchema,
+  generationQuerySchema,
+  areaFilterSchema,
+  resetRequestSchema,
+  resetInputSchema,
+  createAreaSchema,
+  editAreaSchema,
   type Provider,
 } from "../shared/contracts";
 
@@ -37,6 +43,14 @@ export type Dependencies = {
   modelSlots?: { active: number };
 };
 const ROUTES = [
+  { path: "/api/library-state", name: "/library-state", methods: ["GET"] },
+  { path: "/api/library/reset", name: "/library/reset", methods: ["POST"] },
+  {
+    path: "/api/library/reset/cancel",
+    name: "/library/reset/cancel",
+    methods: ["POST"],
+  },
+  { path: "/api/areas", name: "/areas", methods: ["GET"] },
   { path: "/api/config", name: "/config", methods: ["GET"] },
   { path: "/api/notes", name: "/notes", methods: ["GET"] },
   { path: "/api/settings", name: "/settings", methods: ["GET", "PUT"] },
@@ -72,18 +86,30 @@ export function createApi(deps: Dependencies) {
       const url = guard(request, prepared.origin);
       const normalized = url.pathname.replace(/\/$/, "");
       const match = /^\/api\/notes\/([^/]+)$/.exec(normalized);
+      const areaMatch = /^\/api\/areas\/([^/]+)$/.exec(normalized);
       const descriptor = match
         ? NOTE_ROUTE
-        : ROUTES.find((item) => item.path === normalized);
+        : areaMatch
+          ? { name: "/areas/:id", methods: ["PUT", "PATCH"] }
+          : ROUTES.find((item) => item.path === normalized);
       if (!descriptor) throw new ApiError("api_not_found");
       route = descriptor.name;
       if (!(descriptor.methods as readonly string[]).includes(request.method))
         throw new ApiError("method_not_allowed");
+      const allowedQuery =
+        request.method === "GET"
+          ? route === "/notes"
+            ? ["generation", "area", "cursor"]
+            : route === "/notes/:id"
+              ? ["generation"]
+              : []
+          : [];
       if (
         [...url.searchParams.keys()].some(
-          (key) => route !== "/notes" || key !== "cursor",
-        ) ||
-        url.searchParams.getAll("cursor").length > 1
+          (key) =>
+            !allowedQuery.includes(key) ||
+            url.searchParams.getAll(key).length !== 1,
+        )
       )
         throw new ApiError("invalid_input");
       let result: unknown;
@@ -100,6 +126,7 @@ export function createApi(deps: Dependencies) {
               available: !!config[definition.key],
               smartMode: supportsMode(id, "smart"),
               vocabulary: definition.vocabulary,
+              maxVocabularyTerms: definition.maxVocabularyTerms,
               maxAudioBytes: definition.maxAudioBytes,
               maxRecordingSeconds: definition.maxRecordingSeconds,
             };
@@ -110,17 +137,55 @@ export function createApi(deps: Dependencies) {
             maxEnhanceLength: LIMITS.maxEnhanceLength,
           },
         };
+      } else if (route === "/library-state") {
+        result = await storage((store) => store.libraryState());
+      } else if (
+        route === "/library/reset" ||
+        route === "/library/reset/cancel"
+      ) {
+        const input = parseInput(
+          route === "/library/reset" ? resetRequestSchema : resetInputSchema,
+          await readJson(request),
+        );
+        result =
+          route === "/library/reset"
+            ? await storage((store) => store.resetLibrary(input))
+            : await storage((store) => store.cancelReset(input));
+      } else if (route === "/areas") {
+        result = { items: await storage((store) => store.areas()) };
+      } else if (areaMatch) {
+        const id = parseInput(idSchema, areaMatch[1]);
+        const body = await readJson(request);
+        if (request.method === "PUT") {
+          const input = parseInput(createAreaSchema, body);
+          result = await storage((store) => store.createArea(id, input));
+        } else {
+          const input = parseInput(editAreaSchema, body);
+          result = await storage((store) => store.updateArea(id, input));
+        }
       } else if (route === "/notes") {
         const cursor = url.searchParams.get("cursor") ?? undefined;
         // Reject invalid input before allocating a remote client. Store also
         // validates cursors for callers outside this API boundary.
         if (cursor !== undefined) parseListCursor(cursor);
-        result = await storage((store) => store.list(cursor));
+        const generation = parseInput(
+          generationQuerySchema,
+          url.searchParams.get("generation"),
+        );
+        const area = parseInput(
+          areaFilterSchema,
+          url.searchParams.get("area") ?? "all",
+        );
+        result = await storage((store) => store.list(generation, area, cursor));
       } else if (match) {
         const id = parseInput(idSchema, match[1]);
-        if (request.method === "GET")
-          result = await storage((store) => store.get(id));
-        else {
+        if (request.method === "GET") {
+          const generation = parseInput(
+            generationQuerySchema,
+            url.searchParams.get("generation"),
+          );
+          result = await storage((store) => store.get(id, generation));
+        } else {
           const body = await readJson(request);
           if (request.method === "PUT") {
             const input = parseInput(createNoteSchema, body);
@@ -130,7 +195,9 @@ export function createApi(deps: Dependencies) {
             result = await storage((store) => store.update(id, input));
           } else {
             const input = parseInput(deleteSchema, body);
-            await storage((store) => store.delete(id, input.expectedRevision));
+            await storage((store) =>
+              store.delete(id, input.expectedRevision, input.generation),
+            );
             status = 204;
           }
         }
@@ -143,14 +210,16 @@ export function createApi(deps: Dependencies) {
         }
       } else {
         result = await withModelSlot(slots, async (lease) => {
-          if (route === "/transcribe")
-            return deps
-              .getModels()
-              .transcribe(
-                await readTranscription(request),
-                request.signal,
-                lease,
-              );
+          if (route === "/transcribe") {
+            const input = await readTranscription(request);
+            await storage((store) => store.checkGeneration(input.generation));
+            return {
+              ...(await deps
+                .getModels()
+                .transcribe(input, request.signal, lease)),
+              generation: input.generation,
+            };
+          }
           const body = await readJson(request);
           if (
             typeof body === "object" &&
@@ -160,13 +229,12 @@ export function createApi(deps: Dependencies) {
             body.text.length > LIMITS.maxEnhanceLength
           )
             throw new ApiError("enhancement_input_too_long");
-          return deps
-            .getModels()
-            .enhance(
-              parseInput(enhancementSchema, body),
-              request.signal,
-              lease,
-            );
+          const input = parseInput(enhancementSchema, body);
+          await storage((store) => store.checkGeneration(input.generation));
+          return {
+            ...(await deps.getModels().enhance(input, request.signal, lease)),
+            generation: input.generation,
+          };
         });
       }
       return status === 204
@@ -184,9 +252,9 @@ export function createApi(deps: Dependencies) {
             message: failure.message,
             ...(failure.issues ? { issues: failure.issues } : {}),
           },
-          ...(failure.current === undefined
+          ...(failure.conflict === undefined
             ? {}
-            : { current: failure.current }),
+            : { conflict: failure.conflict }),
         },
         { status, headers },
       );
