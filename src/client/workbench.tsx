@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -287,11 +288,20 @@ export function Workbench() {
   const sessions = useRef(new Map<string, EditorSession>());
   const subscriptions = useRef(new Map<string, () => void>());
   const [liveDrafts, setLiveDrafts] = useState<Draft[]>([]);
+  const draftRefreshTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
   const publishDrafts = useCallback(() => {
+    clearTimeout(draftRefreshTimer.current);
     setLiveDrafts(
       [...sessions.current.values()].map((session) => session.snapshot()),
     );
   }, []);
+  const scheduleDraftRefresh = useCallback(() => {
+    clearTimeout(draftRefreshTimer.current);
+    draftRefreshTimer.current = setTimeout(publishDrafts, 250);
+  }, [publishDrafts]);
+  useEffect(() => () => clearTimeout(draftRefreshTimer.current), []);
   const forgetSession = useCallback(
     (session: EditorSession) => {
       const id = session.snapshot().draftId;
@@ -413,7 +423,7 @@ export function Workbench() {
       if (!subscriptions.current.has(session.snapshot().draftId))
         subscriptions.current.set(
           session.snapshot().draftId,
-          session.subscribe(publishDrafts),
+          session.subscribe(scheduleDraftRefresh),
         );
       publishDrafts();
       setActive(session);
@@ -422,7 +432,7 @@ export function Workbench() {
       setPanel(null);
       workspaceScroll.current?.scrollTo({ top: 0 });
     },
-    [publishDrafts],
+    [publishDrafts, scheduleDraftRefresh],
   );
   const setup = useCallback(async () => {
     setError("");
@@ -717,7 +727,6 @@ export function Workbench() {
       locked ||
       captureTokens.current.size > 0 ||
       !settings ||
-      libraryState.legacyPending ||
       !config?.providers.find((p) => p.id === chosenProvider)?.available
     )
       return;
@@ -1195,8 +1204,7 @@ export function Workbench() {
         disabled={
           locked ||
           !settings ||
-          !config?.providers.find((item) => item.id === provider)?.available ||
-          libraryState.legacyPending
+          !config?.providers.find((item) => item.id === provider)?.available
         }
         onClick={() => {
           setPanel(null);
@@ -1211,7 +1219,7 @@ export function Workbench() {
       </button>
       <button
         className="import-entry"
-        disabled={locked || libraryState.legacyPending}
+        disabled={locked}
         onClick={() => {
           setPanel(null);
           setImportOpen(true);
@@ -1461,24 +1469,6 @@ export function Workbench() {
               </button>
             </p>
           )}
-          {libraryState.legacyPending && (
-            <div className="notice" role="status">
-              <span>
-                Earlier audio is still saved in this browser. Download or remove
-                it before starting a new recording. Texts and vocabulary remain
-                available.
-              </span>
-              <button
-                className="text-button"
-                onClick={() => {
-                  void refreshLocal();
-                  setPanel("local");
-                }}
-              >
-                Review earlier audio
-              </button>
-            </div>
-          )}
           {(workspaceError || recorder.error) && (
             <div className="notice error-notice" role="alert">
               <span>{workspaceError || recorder.error}</span>
@@ -1504,20 +1494,6 @@ export function Workbench() {
           {localError && (
             <div className="notice" role="status">
               {localError}
-            </div>
-          )}
-          {!active && !visibleRecording && unsaved.length > 0 && !locked && (
-            <div className="notice recovery-notice" role="status">
-              <span>Local text and audio copies are available.</span>
-              <button
-                className="text-button"
-                onClick={() => {
-                  void refreshLocal();
-                  setPanel("local");
-                }}
-              >
-                Open recovery space <ArrowRight size={14} />
-              </button>
             </div>
           )}
           {opening && (
@@ -1649,7 +1625,7 @@ export function Workbench() {
               </div>
               <button
                 className="empty-import"
-                disabled={locked || libraryState.legacyPending}
+                disabled={locked}
                 onClick={() => setImportOpen(true)}
               >
                 <Upload size={17} /> Or import an audio file{" "}
@@ -1897,9 +1873,7 @@ export function Workbench() {
           ) : (
             <button
               className="primary record-button"
-              disabled={
-                locked || !available || !settings || libraryState.legacyPending
-              }
+              disabled={locked || !available || !settings}
               onClick={() => void beginRecording()}
             >
               <Mic size={18} />
@@ -2400,7 +2374,10 @@ function Editor({
   const [localRetrying, setLocalRetrying] = useState(false);
   const controller = useRef<AbortController | null>(null);
   useEffect(() => () => controller.current?.abort(), []);
-  const words = draft.input.body.trim().split(/\s+/u).filter(Boolean).length;
+  const words = useMemo(
+    () => draft.input.body.trim().split(/\s+/u).filter(Boolean).length,
+    [draft.input.body],
+  );
   const tooLong =
     draft.input.body.length > (config?.limits.maxEnhanceLength ?? 12000);
   const readOnly =

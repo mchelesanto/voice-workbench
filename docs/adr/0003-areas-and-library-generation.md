@@ -6,7 +6,7 @@ Status: accepted. The persistence and temporary-audio foundation is implemented;
 
 Areas organize notes and add vocabulary to the global dictionary. A shared alphabetical chip editor replaces line-based word entry. Captures freeze their effective words/provider/area context; moving a note later changes organization, not transcription.
 
-New audio remains only in tab memory. Reload/close loses it, while successful transcripts and editable text drafts remain durable. Legacy persistent audio is handled by an explicit one-time export/remove transition, never silent upgrade deletion. No filesystem audio service, cloud audio store, or unload-triggered deletion promise.
+New audio remains only in tab memory. Reload/close loses it, while successful transcripts and editable text drafts remain durable. Legacy persistent audio remains available in Local audio & drafts for explicit export/removal, never silent upgrade deletion. Retained content does not block new capture/import or add availability banners to the recording screen. No filesystem audio service, cloud audio store, or unload-triggered deletion promise.
 
 Delete-all clears every cloud note and the initiating browser profile's local content, preserving words and areas. Other profiles retain their local material read-only after detecting a reset. A monotonic library generation fences stale writes; an idempotent receipt and IndexedDB-CAS journal prevent replayed deletion from clearing new content. Move note writes to a new physical table and leave a read-only old-name view, so another machine's old local server cannot silently bypass the new write contract.
 

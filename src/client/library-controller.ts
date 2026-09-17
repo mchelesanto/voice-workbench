@@ -27,7 +27,6 @@ export type LibrarySnapshot = {
   phase: "loading" | "ready" | "offline" | "pending" | "cleanup";
   generation: number | null;
   pending: PendingReset | null;
-  legacyPending: boolean;
   error: string;
   repair?: ResetResolution;
 };
@@ -44,7 +43,6 @@ export class LibraryController {
     phase: "loading",
     generation: null,
     pending: null,
-    legacyPending: false,
     error: "",
   };
   private listeners = new Set<() => void>();
@@ -214,7 +212,6 @@ export class LibraryController {
             : "pending",
         pending: metadata.pendingReset,
         generation: metadata.observedGeneration,
-        legacyPending: metadata.legacyAudioTransition === "pending",
       });
       if (metadata.pendingReset.phase === "acknowledged" && !this.resetBusy) {
         this.invalidate("local", this.fence!);
@@ -237,7 +234,6 @@ export class LibraryController {
         phase: "offline",
         generation: metadata.initialized ? metadata.observedGeneration : null,
         pending: null,
-        legacyPending: metadata.legacyAudioTransition === "pending",
         error: error instanceof Error ? error.message : "Library unavailable.",
       });
       return;
@@ -275,7 +271,6 @@ export class LibraryController {
       phase: "ready",
       generation: metadata.observedGeneration,
       pending: null,
-      legacyPending: metadata.legacyAudioTransition === "pending",
       error: "",
       repair: undefined,
     });
@@ -290,7 +285,6 @@ export class LibraryController {
       metadata = await this.advanceKnown(metadata, this.lifetime.signal);
       this.publish({
         generation: metadata.observedGeneration,
-        legacyPending: metadata.legacyAudioTransition === "pending",
       });
     } else {
       await this.sync();
@@ -299,17 +293,8 @@ export class LibraryController {
           "The library is offline. You can choose to record with previously loaded words.",
         );
     }
-    if (
-      !this.fence ||
-      this.value.generation === null ||
-      this.value.pending ||
-      this.value.legacyPending
-    )
-      throw new ClientError(
-        this.value.legacyPending
-          ? "Review earlier saved audio before starting a new recording."
-          : "Finish library setup or pending cleanup first.",
-      );
+    if (!this.fence || this.value.generation === null || this.value.pending)
+      throw new ClientError("Finish library setup or pending cleanup first.");
     await authorizeLocal(this.fence);
     return { ...this.fence };
   }

@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { EditorSession, type EditorPorts } from "../src/client/editor";
+import {
+  AUTOSAVE_DELAY_MS,
+  EditorSession,
+  type EditorPorts,
+} from "../src/client/editor";
 import type { Note } from "../src/shared/contracts";
 import { ClientError } from "../src/client/api";
 const note: Note = {
@@ -388,11 +392,11 @@ it("resumes autosave for edits made during a slow local-only cleanup", async () 
     const local = session.retryLocal();
     await vi.waitFor(() => expect(release).toBeTypeOf("function"));
     session.edit({ body: "New work during cleanup" });
-    await vi.advanceTimersByTimeAsync(800);
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS + 100);
     expect(ports.write).not.toHaveBeenCalled();
     release();
     await local;
-    await vi.advanceTimersByTimeAsync(800);
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS + 100);
     expect(ports.write).toHaveBeenCalledTimes(1);
     expect(session.snapshot()).toMatchObject({
       status: "saved",
@@ -489,12 +493,14 @@ it("waits for an already started local write before deleting its draft", async (
       }),
   );
   session.edit({ body: "Pending local write" });
+  const securing = session.secure();
   await vi.waitFor(() => expect(release).toBeTypeOf("function"));
   const discarded = session.discard();
   await Promise.resolve();
   await Promise.resolve();
   expect(ports.remove).not.toHaveBeenCalled();
   release();
+  await securing;
   await discarded;
   expect(ports.remove).toHaveBeenCalledTimes(1);
 });
@@ -703,4 +709,109 @@ it("rejects a refinement from a previous terminal epoch even with equal source t
   resolve("Late proposal");
   await expect(old).rejects.toThrow("earlier library");
   session.dispose();
+});
+
+it("coalesces typing locally and syncs only after three seconds without edits", async () => {
+  vi.useFakeTimers();
+  const { session, ports } = setup();
+  try {
+    for (const body of ["A", "AB", "ABC"]) {
+      session.edit({ body });
+      await vi.advanceTimersByTimeAsync(50);
+    }
+    expect(ports.persist).not.toHaveBeenCalled();
+    expect(ports.write).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(150);
+    expect(ports.persist).toHaveBeenCalledTimes(1);
+    expect(session.snapshot()).toMatchObject({
+      durable: true,
+      input: { body: "ABC" },
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    session.edit({ title: "New title" });
+    await vi.advanceTimersByTimeAsync(2999);
+    expect(ports.write).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(ports.write).toHaveBeenCalledTimes(1);
+    expect(ports.write).toHaveBeenCalledWith(
+      note.id,
+      expect.objectContaining({ body: "ABC", title: "New title" }),
+      1,
+    );
+  } finally {
+    session.dispose();
+    vi.useRealTimers();
+  }
+});
+it("keeps local recovery current during continuous typing without cloud writes", async () => {
+  vi.useFakeTimers();
+  const { session, ports } = setup();
+  try {
+    for (let i = 0; i < 100; i++) {
+      session.edit({ body: `Long typing burst ${i}` });
+      await vi.advanceTimersByTimeAsync(100);
+    }
+    expect(ports.write).not.toHaveBeenCalled();
+    expect(vi.mocked(ports.persist).mock.calls.length).toBeGreaterThan(0);
+    expect(vi.mocked(ports.persist).mock.calls.length).toBeLessThan(50);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(session.snapshot()).toMatchObject({
+      durable: true,
+      input: { body: "Long typing burst 99" },
+    });
+  } finally {
+    session.dispose();
+    vi.useRealTimers();
+  }
+});
+it.each(["discard", "fence"] as const)(
+  "cancels delayed local and cloud writes on %s",
+  async (action) => {
+    vi.useFakeTimers();
+    const { session, ports } = setup();
+    try {
+      session.edit({ body: "Never publish after cancellation" });
+      await session[action]();
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(ports.persist).not.toHaveBeenCalled();
+      expect(ports.write).not.toHaveBeenCalled();
+    } finally {
+      session.dispose();
+      vi.useRealTimers();
+    }
+  },
+);
+it("does not send an obsolete snapshot when typing resumes during local persistence", async () => {
+  vi.useFakeTimers();
+  const { session, ports } = setup();
+  let release!: () => void;
+  ports.persist = vi
+    .fn()
+    .mockImplementationOnce(
+      () =>
+        new Promise<void>((r) => {
+          release = r;
+        }),
+    )
+    .mockResolvedValue(undefined);
+  try {
+    session.edit({ body: "Earlier" });
+    const saving = session.save();
+    await vi.advanceTimersByTimeAsync(0);
+    session.edit({ body: "Latest" });
+    release();
+    await saving;
+    await vi.advanceTimersByTimeAsync(2999);
+    expect(ports.write).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(ports.write).toHaveBeenCalledTimes(1);
+    expect(ports.write).toHaveBeenCalledWith(
+      note.id,
+      expect.objectContaining({ body: "Latest" }),
+      1,
+    );
+  } finally {
+    session.dispose();
+    vi.useRealTimers();
+  }
 });

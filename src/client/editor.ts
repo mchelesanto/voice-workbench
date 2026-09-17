@@ -54,6 +54,9 @@ export type EditorPorts = {
   confirmed?: (note: Note) => void;
   localChanged?: () => void;
 };
+export const AUTOSAVE_DELAY_MS = 3000;
+const LOCAL_SAVE_DELAY_MS = 300;
+
 export class EditorSession {
   private state: Draft;
   private listeners = new Set<() => void>();
@@ -61,6 +64,8 @@ export class EditorSession {
   private version = 0;
   private busy = false;
   private timer?: ReturnType<typeof setTimeout>;
+  private localTimer?: ReturnType<typeof setTimeout>;
+  private lastEditAt = 0;
   private alive = true;
   private discarded = false;
   private fenced = false;
@@ -155,6 +160,8 @@ export class EditorSession {
     this.localBusy = false;
     this.refreshAfter = undefined;
     clearTimeout(this.timer);
+    clearTimeout(this.localTimer);
+    this.localTimer = undefined;
     if (this.state.status === "saving")
       this.update({
         status: "error",
@@ -209,18 +216,23 @@ export class EditorSession {
       this.state.status === "local" &&
       this.state.localIssue?.kind !== "persist"
     )
-      this.timer = setTimeout(() => {
-        void this.save();
-      }, 700);
+      this.timer = setTimeout(
+        () => {
+          void this.save();
+        },
+        Math.max(0, AUTOSAVE_DELAY_MS - (Date.now() - this.lastEditAt)),
+      );
   }
   private cannotSave() {
     return this.inactive() || this.state.status === "deleted";
   }
   private persist() {
+    clearTimeout(this.localTimer);
+    this.localTimer = undefined;
     if (this.inactive()) return Promise.resolve();
     const ticket = ++this.localWrite;
     const epoch = this.epoch;
-    this.update({ durable: false });
+    if (this.state.durable) this.update({ durable: false });
     const value = {
       ...this.state,
       input: { ...this.state.input },
@@ -276,6 +288,8 @@ export class EditorSession {
     if (this.inactive() || ["deleting", "deleted"].includes(this.state.status))
       return;
     this.version++;
+    this.lastEditAt = Date.now();
+    clearTimeout(this.timer);
     this.update({
       input: { ...this.state.input, ...patch },
       updatedAt: new Date().toISOString(),
@@ -283,9 +297,12 @@ export class EditorSession {
       status: this.state.status === "conflict" ? "conflict" : "local",
       error: undefined,
     });
-    void this.persist()
-      .then(() => this.schedule())
-      .catch(() => {});
+    // Coalesce fast typing while still securing long, uninterrupted edits.
+    this.localTimer ??= setTimeout(() => {
+      void this.persist()
+        .then(() => this.schedule())
+        .catch(() => {});
+    }, LOCAL_SAVE_DELAY_MS);
   }
   async secure() {
     await this.persist();
@@ -400,6 +417,8 @@ export class EditorSession {
     this.discarded = true;
     this.alive = false;
     clearTimeout(this.timer);
+    clearTimeout(this.localTimer);
+    this.localTimer = undefined;
     await this.queue.catch(() => {});
     if (epoch !== this.epoch) return;
     try {
@@ -437,7 +456,8 @@ export class EditorSession {
       } catch {
         return;
       }
-      if (this.cannotSave() || epoch !== this.epoch) return;
+      if (this.cannotSave() || epoch !== this.epoch || version !== this.version)
+        return;
       this.update({ status: "saving", error: undefined });
       let note: Note;
       try {
@@ -590,6 +610,8 @@ export class EditorSession {
     const current = this.state.current;
     if (this.inactive() || !current || this.state.status !== "conflict") return;
     this.version++;
+    this.lastEditAt = Date.now();
+    clearTimeout(this.timer);
     this.update({
       input:
         choice === "remote"
