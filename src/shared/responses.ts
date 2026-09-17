@@ -87,12 +87,13 @@ export const configSchema = z.strictObject({
       available: z.boolean(),
       smartMode: z.boolean(),
       vocabulary: z.boolean(),
+      maxAudioBytes: z.number().int().positive(),
+      maxRecordingSeconds: z.number().int().positive(),
     }),
   ),
   enhancementAvailable: z.boolean(),
   limits: z.strictObject({
     maxAudioBytes: z.number().int().positive(),
-    maxRecordingSeconds: z.number().int().positive(),
     maxEnhanceLength: z.number().int().positive(),
   }),
 });

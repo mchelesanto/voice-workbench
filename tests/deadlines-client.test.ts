@@ -51,7 +51,7 @@ describe("Deadlines and actual operation lifetime", () => {
     const second = withModelSlot(slots, (lease) =>
       service.transcribe(input, new AbortController().signal, lease),
     ).catch((e) => e);
-    await vi.advanceTimersByTimeAsync(120001);
+    await vi.advanceTimersByTimeAsync(1800001);
     expect(await first).toMatchObject({
       code: "provider_timeout",
       status: 504,

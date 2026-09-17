@@ -8,6 +8,7 @@ import {
   LoaderCircle,
   ShieldCheck,
 } from "lucide-react";
+import { PROVIDERS } from "../shared/contracts";
 import { duration } from "./export";
 import type { RecorderSnapshot } from "./recorder-controller";
 
@@ -110,7 +111,8 @@ export function RecordingDialog({
               {duration(state.elapsed)}
             </div>
             <span className="capture-limit">
-              Automatically finishes at 10:00
+              {PROVIDERS[state.provider].label} limit:{" "}
+              {PROVIDERS[state.provider].maxRecordingSeconds / 60} minutes
             </span>
             <div
               className={`input-level ${permission || stopping || review ? "input-level-idle" : ""}`}
@@ -198,7 +200,7 @@ export function RecordingDialog({
         )}
         <p className="capture-privacy">
           <ShieldCheck size={14} />
-          {state.confirmDiscard
+          {state.confirmDiscard || failed || permission
             ? "Nothing has been sent for transcription."
             : `Finishing sends this recording to ${state.provider === "google" ? "Google" : "Mistral"}.`}
         </p>

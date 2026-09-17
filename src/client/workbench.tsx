@@ -38,6 +38,7 @@ import {
   X,
 } from "lucide-react";
 import {
+  PROVIDERS,
   createNoteSchema,
   noteSchema,
   settingsSchema,
@@ -428,7 +429,9 @@ export function Workbench() {
       try {
         const recovery = recordingRecovery(item);
         const candidate: Recording =
-          fresh && item.blob.size > 25 * 1024 * 1024 && !item.result
+          fresh &&
+          item.blob.size > PROVIDERS[item.provider].maxAudioBytes &&
+          !item.result
             ? {
                 ...item,
                 state: "error",
@@ -1432,7 +1435,7 @@ export function Workbench() {
                 {processing
                   ? processingCopy.detail
                   : recorder.phase === "recording"
-                    ? `${duration(recorder.elapsed)} / 10:00`
+                    ? `${duration(recorder.elapsed)} / ${duration(PROVIDERS[recorder.provider].maxRecordingSeconds * 1000)}`
                     : "One recording. One new note."}
               </small>
             </div>
@@ -1542,6 +1545,7 @@ export function Workbench() {
         <ImportDialog
           config={config}
           settingsReady={!!settings}
+          retryConnection={setup}
           provider={provider}
           mode={mode}
           close={() => setImportOpen(false)}

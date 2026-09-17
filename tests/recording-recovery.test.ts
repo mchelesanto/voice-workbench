@@ -121,7 +121,7 @@ it("keeps a finished result savable even when the retained audio exceeds the upl
   expect(
     recordingRecovery({
       ...recording,
-      blob: new Blob([new Uint8Array(26 * 1024 * 1024)]),
+      blob: new Blob([new Uint8Array(71 * 1024 * 1024)]),
     }).action,
   ).toBe("save");
 });
@@ -130,10 +130,10 @@ it("explains oversized legacy recordings after reload and never offers an upload
     ...recording,
     state: "recorded",
     result: undefined,
-    blob: new Blob([new Uint8Array(26 * 1024 * 1024)]),
+    blob: new Blob([new Uint8Array(71 * 1024 * 1024)]),
   });
   expect(next.action).toBe("none");
-  expect(next.hint).toContain("25 MiB");
+  expect(next.hint).toContain("73 MB");
 });
 it.each(["unsupported_audio", "audio_too_large", "unsupported_mode"] as const)(
   "does not repeat an unchanged definitively rejected input: %s",
@@ -213,3 +213,47 @@ it.each(["forbidden_origin", "configuration_unavailable"] as const)(
     expect(next.setupPrompt).toContain("application configuration and address");
   },
 );
+
+it("uses the recording provider for upload recovery rather than a global byte cap", () => {
+  const blob = Object.defineProperty(new Blob(["test"]), "size", {
+    value: 80_000_000,
+  });
+  const base = {
+    kind: "recording",
+    id: "11111111-1111-4111-8111-111111111111",
+    createdAt: "2026-09-17T00:00:00.000Z",
+    blob,
+    mime: "audio/wav",
+    durationMs: 1800000,
+    mode: "verbatim",
+    state: "recorded",
+  } as const;
+  expect(recordingRecovery({ ...base, provider: "google" }).action).toBe(
+    "none",
+  );
+  expect(recordingRecovery({ ...base, provider: "mistral" }).action).toBe(
+    "transcribe",
+  );
+});
+
+it("retains over-duration audio without offering another unchanged upload", () => {
+  const base = {
+    kind: "recording",
+    id: "11111111-1111-4111-8111-111111111111",
+    blob: new Blob(["audio"]),
+    mime: "audio/webm",
+    durationMs: 3600001,
+    createdAt: "2026-09-17T00:00:00.000Z",
+    mode: "verbatim",
+    state: "recorded",
+  } as const;
+  expect(recordingRecovery({ ...base, provider: "google" }).action).toBe(
+    "none",
+  );
+  expect(recordingRecovery({ ...base, provider: "google" }).hint).toContain(
+    "60 minutes",
+  );
+  expect(recordingRecovery({ ...base, provider: "mistral" }).action).toBe(
+    "transcribe",
+  );
+});

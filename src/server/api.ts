@@ -100,12 +100,13 @@ export function createApi(deps: Dependencies) {
               available: !!config[definition.key],
               smartMode: supportsMode(id, "smart"),
               vocabulary: definition.vocabulary,
+              maxAudioBytes: definition.maxAudioBytes,
+              maxRecordingSeconds: definition.maxRecordingSeconds,
             };
           }),
           enhancementAvailable: !!config.fireworksKey,
           limits: {
             maxAudioBytes: LIMITS.maxAudioBytes,
-            maxRecordingSeconds: LIMITS.maxRecordingSeconds,
             maxEnhanceLength: LIMITS.maxEnhanceLength,
           },
         };

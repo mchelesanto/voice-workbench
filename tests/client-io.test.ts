@@ -119,3 +119,30 @@ it("keeps raw text literal and quotes frontmatter without unsafe filenames", () 
   expect(exported).toContain(`title: ${JSON.stringify(title)}\n`);
   expect(exported).toContain("<script>literal</script>");
 });
+
+it("gives transcription enough time without extending refinement or data deadlines", async () => {
+  const timeout = vi
+    .spyOn(AbortSignal, "timeout")
+    .mockImplementation(() => new AbortController().signal);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response(JSON.stringify({ ok: true }))),
+  );
+  try {
+    await request("/transcribe", z.object({ ok: z.boolean() }), {
+      method: "POST",
+      operation: "model",
+    });
+    expect(timeout).toHaveBeenLastCalledWith(1870000);
+    await request("/enhance", z.object({ ok: z.boolean() }), {
+      method: "POST",
+      operation: "model",
+    });
+    expect(timeout).toHaveBeenLastCalledWith(150000);
+    await request("/config", z.object({ ok: z.boolean() }));
+    expect(timeout).toHaveBeenLastCalledWith(20000);
+  } finally {
+    vi.unstubAllGlobals();
+    timeout.mockRestore();
+  }
+});

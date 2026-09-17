@@ -151,7 +151,8 @@ describe("Recording session ownership", () => {
       const f = fixture();
       await f.controller.start("google", "verbatim");
       f.controller.requestDiscard();
-      await vi.advanceTimersByTimeAsync(600000);
+      vi.setSystemTime(Date.now() + 3600000);
+      await vi.advanceTimersByTimeAsync(100);
       expect(f.native.stop).toHaveBeenCalledTimes(1);
       f.complete();
       expect(f.changed.mock.lastCall?.[0].phase).toBe("review");
@@ -161,6 +162,59 @@ describe("Recording session ownership", () => {
       expect(f.ready).toHaveBeenCalledTimes(choice === "discard" ? 0 : 1);
     },
   );
+  it.each(["google", "mistral"] as const)(
+    "keeps a %s half-hour capture running",
+    async (provider) => {
+      vi.useFakeTimers();
+      const f = fixture();
+      await f.controller.start(provider, "verbatim");
+      vi.setSystemTime(Date.now() + 1800000);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(f.changed.mock.lastCall?.[0].phase).toBe("recording");
+      expect(f.native.stop).not.toHaveBeenCalled();
+      f.controller.stop();
+      f.complete();
+      expect(f.ready.mock.calls[0][0].durationMs).toBeGreaterThanOrEqual(
+        1800000,
+      );
+      f.controller.discard();
+    },
+  );
+  it("keeps Mistral running past the Google limit and stops at its own boundary", async () => {
+    vi.useFakeTimers();
+    const f = fixture();
+    await f.controller.start("mistral", "verbatim");
+    const start = Date.now();
+    vi.setSystemTime(start + 3600000);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(f.native.stop).not.toHaveBeenCalled();
+    vi.setSystemTime(start + 10800000);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(f.native.stop).toHaveBeenCalledTimes(1);
+    f.controller.discard();
+  });
+  it.each([
+    ["google", 70 * 1024 * 1024],
+    ["mistral", 500000000],
+  ] as const)("stops %s at its byte reserve", async (provider, limit) => {
+    const f = fixture();
+    await f.controller.start(provider, "verbatim");
+    f.native.ondataavailable?.({
+      data: { size: limit - 1024 * 1024 - 1 } as Blob,
+    });
+    expect(f.native.stop).not.toHaveBeenCalled();
+    f.native.ondataavailable?.({ data: { size: 1 } as Blob });
+    expect(f.native.stop).toHaveBeenCalledTimes(1);
+    f.controller.discard();
+  });
+  it("keeps an unexpected native stop out of automatic transcription", async () => {
+    const f = fixture();
+    await f.controller.start("google", "verbatim");
+    f.complete();
+    expect(f.ready).toHaveBeenCalledTimes(1);
+    expect(f.ready.mock.calls[0][1]).toBe(true);
+    expect(f.track.stop).toHaveBeenCalledTimes(1);
+  });
   it("emits actual measured level history rather than an animated placeholder", async () => {
     vi.useFakeTimers();
     const f = fixture();

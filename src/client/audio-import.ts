@@ -1,4 +1,4 @@
-import { LIMITS } from "../shared/contracts";
+import { LIMITS, PROVIDERS, type Provider } from "../shared/contracts";
 import {
   canonicalAudioMime,
   detectedAudioMime,
@@ -64,7 +64,7 @@ export async function inspectAudioFile(
       "This file is empty. Choose an audio file with a recording.",
     );
   if (file.size > LIMITS.maxAudioBytes)
-    throw new Error("This file exceeds 25 MiB. Choose a smaller audio file.");
+    throw new Error("This file exceeds 500 MB. Choose a smaller audio file.");
   const bytes = new Uint8Array(await read(file, signal));
   signal.throwIfAborted();
   const mime = detectedAudioMime(bytes);
@@ -81,9 +81,12 @@ export async function inspectAudioFile(
     );
   return { name: file.name, blob: new Blob([bytes], { type: mime }), mime };
 }
-export function importDurationError(durationMs: number): string | undefined {
+export function importDurationError(
+  durationMs: number,
+  provider: Provider,
+): string | undefined {
   if (!Number.isFinite(durationMs) || durationMs <= 0)
     return "This file has no readable audio duration.";
-  if (durationMs > LIMITS.maxRecordingSeconds * 1000)
-    return "This audio is longer than 10 minutes. Choose a shorter file.";
+  if (durationMs > PROVIDERS[provider].maxRecordingSeconds * 1000)
+    return `${PROVIDERS[provider].label} supports up to ${PROVIDERS[provider].maxRecordingSeconds / 60} minutes per transcription. Choose another provider or a shorter file.`;
 }

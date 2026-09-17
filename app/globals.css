@@ -203,6 +203,31 @@
 }
 .modal.import-modal {
   width: 650px;
+  padding: 0;
+  overflow: hidden;
+}
+.modal.import-modal[open] {
+  display: flex;
+  flex-direction: column;
+}
+.import-content {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 28px;
+}
+.modal.import-modal .modal-actions {
+  position: static;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 16px 28px;
+}
+@media (max-width: 600px) {
+  .import-content {
+    padding: 20px;
+  }
+  .modal.import-modal .modal-actions {
+    padding: 16px 20px;
+  }
 }
 .dialog-eyebrow {
   display: block;

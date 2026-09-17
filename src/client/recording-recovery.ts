@@ -1,4 +1,4 @@
-import { LIMITS, type Note } from "../shared/contracts";
+import { PROVIDERS, type Note } from "../shared/contracts";
 import { classifyCreateReplay } from "../shared/responses";
 import type { Recording } from "./local-store";
 export const recordingConflictMessage =
@@ -39,14 +39,20 @@ export function recordingRecovery(row: Recording): {
   if (row.state === "cloud_confirmed") return { action: "none", label: "" };
   if (row.result)
     return { action: "save", label: "Save transcript to library" };
+  if (row.durationMs > PROVIDERS[row.provider].maxRecordingSeconds * 1000)
+    return {
+      action: "none",
+      label: "",
+      hint: `This recording exceeds ${PROVIDERS[row.provider].label}'s ${PROVIDERS[row.provider].maxRecordingSeconds / 60} minutes per transcription. Download the audio and import a shorter file or choose a provider with a longer limit.`,
+    };
   if (
-    row.blob.size > LIMITS.maxAudioBytes ||
+    row.blob.size > PROVIDERS[row.provider].maxAudioBytes ||
     row.errorCode === "audio_too_large"
   )
     return {
       action: "none",
       label: "",
-      hint: "This recording exceeds 25 MiB. Download it and record a shorter note.",
+      hint: `This recording exceeds the ${PROVIDERS[row.provider].label} upload limit (${Math.round(PROVIDERS[row.provider].maxAudioBytes / 1_000_000)} MB). Download it or import a smaller file.`,
     };
   if (
     row.errorCode &&

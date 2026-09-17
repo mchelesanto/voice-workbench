@@ -14,6 +14,7 @@ const aliases: Record<string, string> = {
   "audio/wave": "audio/wav",
   "audio/vnd.wave": "audio/wav",
   "audio/mp3": "audio/mpeg",
+  "audio/x-mp3": "audio/mpeg",
   "audio/m4a": "audio/mp4",
   "audio/x-m4a": "audio/mp4",
   "video/mp4": "audio/mp4",

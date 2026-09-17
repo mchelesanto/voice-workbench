@@ -72,11 +72,12 @@ async function callProvider<T>(
   incoming: AbortSignal,
   lease: ModelLease | undefined,
   fallback: ErrorCode,
+  timeoutMs = LIMITS.providerTimeoutMs as number,
 ): Promise<T> {
   const deadline = new AbortController();
   const timer = setTimeout(
     () => deadline.abort(new DOMException("Provider deadline", "TimeoutError")),
-    LIMITS.providerTimeoutMs,
+    timeoutMs,
   );
   const signal = AbortSignal.any([incoming, deadline.signal]);
   try {
@@ -163,6 +164,7 @@ export function createModels(
         signal,
         lease,
         "transcription_failed",
+        LIMITS.transcriptionTimeoutMs,
       );
       return {
         text: validText(result.text, "no_transcript"),

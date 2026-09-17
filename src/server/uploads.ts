@@ -4,6 +4,7 @@ import { requireType, withBoundedBody, parseInput } from "./http";
 import { validateAudio } from "./audio";
 import {
   LIMITS,
+  PROVIDERS,
   transcriptionSchema,
   supportsMode,
   type TranscriptionInput,
@@ -14,10 +15,14 @@ export async function readTranscription(
   requireType(request, "multipart/form-data");
   let form: FormData;
   try {
-    form = await withBoundedBody(request, LIMITS.maxBodyBytes, (body) =>
-      new Response(body, {
-        headers: { "content-type": request.headers.get("content-type")! },
-      }).formData(),
+    form = await withBoundedBody(
+      request,
+      LIMITS.maxBodyBytes,
+      (body) =>
+        new Response(body, {
+          headers: { "content-type": request.headers.get("content-type")! },
+        }).formData(),
+      LIMITS.audioBodyTimeoutMs,
     );
   } catch (error) {
     if (error instanceof ApiError) throw error;
@@ -52,6 +57,8 @@ export async function readTranscription(
   });
   if (!supportsMode(input.provider, input.mode))
     throw new ApiError("unsupported_mode");
+  if (file.size > PROVIDERS[input.provider].maxAudioBytes)
+    throw new ApiError("audio_too_large");
   const audio = new Uint8Array(await file.arrayBuffer());
   validateAudio(audio, file.type);
   return { ...input, audio };

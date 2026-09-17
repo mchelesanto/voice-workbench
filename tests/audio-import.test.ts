@@ -39,6 +39,15 @@ describe("Local audio file inspection", () => {
     expect(new Uint8Array(await result.blob.arrayBuffer())).toEqual(bytes);
     expect(validateAudio(bytes, result.mime)).toBe("audio/mpeg");
   });
+  it("accepts the platform MP3 alias while preserving content validation", async () => {
+    const bytes = new Uint8Array([255, 251, 144, 100]);
+    const result = await inspectAudioFile(
+      new File([bytes], "voice.mp3", { type: "audio/x-mp3" }),
+      signal(),
+      read,
+    );
+    expect(result.mime).toBe("audio/mpeg");
+  });
   it("accepts the registered WAV MIME alias", async () => {
     const result = await inspectAudioFile(
       new File([wav()], "test.wav", { type: "audio/vnd.wave" }),
@@ -93,11 +102,13 @@ describe("Local audio file inspection", () => {
     ).rejects.toThrow("empty");
     await expect(
       inspectAudioFile(
-        new File([new Uint8Array(25 * 1024 * 1024 + 1)], "large.wav"),
+        Object.defineProperty(new File([], "large.wav"), "size", {
+          value: 500_000_001,
+        }),
         signal(),
         reader,
       ),
-    ).rejects.toThrow("25 MiB");
+    ).rejects.toThrow("500 MB");
     expect(reader).not.toHaveBeenCalled();
   });
   it("ignores a read completed after cancellation", async () => {
@@ -114,10 +125,17 @@ describe("Local audio file inspection", () => {
       ),
     ).rejects.toMatchObject({ name: "AbortError" });
   });
-  it("enforces finite duration and the existing ten-minute note boundary", () => {
-    expect(importDurationError(600000)).toBeUndefined();
-    for (const ms of [0, NaN, Infinity, 600001])
-      expect(importDurationError(ms)).toBeDefined();
+  it("accepts half-hour imports and enforces the selected provider duration", () => {
+    for (const provider of ["google", "mistral"] as const) {
+      expect(importDurationError(1800000, provider)).toBeUndefined();
+      for (const ms of [0, NaN, Infinity])
+        expect(importDurationError(ms, provider)).toBeDefined();
+    }
+    expect(importDurationError(3600000, "google")).toBeUndefined();
+    expect(importDurationError(3600001, "google")).toContain("60 minutes");
+    expect(importDurationError(3600001, "mistral")).toBeUndefined();
+    expect(importDurationError(10800000, "mistral")).toBeUndefined();
+    expect(importDurationError(10800001, "mistral")).toContain("180 minutes");
   });
   it.each([
     ["audio/mpeg", "mp3"],

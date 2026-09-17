@@ -5,7 +5,7 @@ import {
   type ErrorCode,
   type RetryOperation,
 } from "../shared/responses";
-import type { Note, Settings } from "../shared/contracts";
+import { LIMITS, type Note, type Settings } from "../shared/contracts";
 export class ClientError extends Error {
   constructor(
     message: string,
@@ -35,7 +35,13 @@ export async function request<T>(
         : JSON.stringify(options.body);
   const operation = options.operation ?? (method === "GET" ? "read" : "write");
   const signal = AbortSignal.any([
-    AbortSignal.timeout(operation === "model" ? 150000 : 20000),
+    AbortSignal.timeout(
+      operation === "model"
+        ? path === "/transcribe"
+          ? LIMITS.transcriptionTimeoutMs + LIMITS.audioBodyTimeoutMs + 10000
+          : 150000
+        : 20000,
+    ),
     ...(options.signal ? [options.signal] : []),
   ]);
   for (let attempt = 0; ; attempt++) {

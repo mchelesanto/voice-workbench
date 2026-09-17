@@ -4,6 +4,8 @@
 
 ### Added
 
+- Focused microphone capture with live levels, explicit discard confirmation, and local audio-file import with preview.
+
 - Local Next.js API for notes, vocabulary, transcription, and text refinement.
 - Transactional storage with revision conflicts, replay semantics, and deletion markers.
 - Versioned SQL migrations with checksums and atomic application.
@@ -26,9 +28,15 @@
 
 ### Changed
 
+- Replace the ten-minute application cap with provider-specific recording and import limits, larger uploads, compact speech capture, and a separate long-transcription deadline.
+
 - Runtime messages, code comments, and test descriptions use English. Multilingual input remains supported.
 
 ### Fixed
+
+- Keep interrupted or over-duration captures local instead of automatically transcribing them.
+- Retry unavailable settings inside the import dialog without losing the selected file, with reachable actions on short screens.
+- Recognize the platform MP3 MIME alias while retaining byte-level format validation.
 
 - Include live audio and completed in-memory transcripts in recovery, with truthful storage and cancellation states.
 - Prevent older transcription attempts in another tab from overwriting newer recording results.

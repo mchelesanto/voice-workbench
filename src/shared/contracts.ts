@@ -1,19 +1,20 @@
 import { z } from "zod";
 
 export const LIMITS = {
-  maxAudioBytes: 25 * 1024 * 1024,
-  maxBodyBytes: 26 * 1024 * 1024,
+  maxAudioBytes: 500_000_000,
+  maxBodyBytes: 500_000_000 + 1024 * 1024,
   maxJsonBytes: 512 * 1024,
   maxBodyChunks: 65536,
   maxTitleLength: 160,
   maxVocabularyTerms: 100,
   maxVocabularyTermLength: 80,
-  maxRecordingSeconds: 600,
   maxTextLength: 100000,
   maxEnhanceLength: 12000,
   maxOutputTokens: 8192,
   bodyTimeoutMs: 20000,
   providerTimeoutMs: 120000,
+  transcriptionTimeoutMs: 30 * 60 * 1000,
+  audioBodyTimeoutMs: 60000,
 } as const;
 export const providerSchema = z.enum(["google", "mistral"]);
 export const modeSchema = z.enum(["verbatim", "smart"]);
@@ -29,12 +30,17 @@ export const PROVIDERS = {
   google: {
     ...MODEL_HISTORY.google[0],
     label: "Google",
+    maxRecordingSeconds: 60 * 60,
+    // The inline SDK request is base64 JSON, below Google's 100 MB limit.
+    maxAudioBytes: 70 * 1024 * 1024,
     vocabulary: true,
     key: "googleKey",
   },
   mistral: {
     ...MODEL_HISTORY.mistral[1],
     label: "Mistral",
+    maxRecordingSeconds: 3 * 60 * 60,
+    maxAudioBytes: 500_000_000,
     vocabulary: true,
     key: "mistralKey",
   },

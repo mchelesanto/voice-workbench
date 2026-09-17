@@ -14,7 +14,7 @@ const definitions = {
   request_too_large: [413, "The request is too large."],
   audio_too_large: [
     413,
-    "The recording exceeds 25 MiB. It remains available on this device.",
+    "The recording exceeds the selected provider upload limit. It remains available on this device.",
   ],
   request_timeout: [408, "The upload did not finish in time."],
   request_aborted: [

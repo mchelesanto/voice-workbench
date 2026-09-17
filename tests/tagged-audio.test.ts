@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 const generated = vi.hoisted(() =>
-  vi.fn(async (_options: unknown) => ({
+  vi.fn<(options: unknown) => Promise<unknown>>(async () => ({
     text: "Synthetic tagged audio.",
     segments: [],
     language: "en",

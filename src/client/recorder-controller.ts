@@ -1,4 +1,4 @@
-import { LIMITS, type Mode, type Provider } from "../shared/contracts";
+import { PROVIDERS, type Mode, type Provider } from "../shared/contracts";
 import type { Recording } from "./local-store";
 
 export type RecorderPhase =
@@ -109,7 +109,11 @@ export class RecorderController {
           session.chunks.push(event.data);
           session.bytes += event.data.size;
         }
-        if (session.bytes >= 24 * 1024 * 1024) this.stop();
+        if (
+          session.bytes >=
+          PROVIDERS[session.provider].maxAudioBytes - 1024 * 1024
+        )
+          this.stop();
       };
       recorder.onerror = () => {
         if (this.active !== session) return;
@@ -154,7 +158,11 @@ export class RecorderController {
             Number.isFinite(level) ? Math.max(0, Math.min(1, level)) : 0,
           ],
         });
-        if (elapsed >= LIMITS.maxRecordingSeconds * 1000) this.stop();
+        if (
+          elapsed >=
+          PROVIDERS[session.provider].maxRecordingSeconds * 1000 - 1000
+        )
+          this.stop();
       }, 100);
     } catch (error) {
       if (this.active !== session) return;
@@ -189,6 +197,13 @@ export class RecorderController {
   }
   private finished(session: Session) {
     if (this.active !== session || session.completed) return;
+    if (session.ended === undefined) {
+      session.damaged = true;
+      this.update({
+        error:
+          "Recording stopped unexpectedly. Review or download the captured audio before transcribing.",
+      });
+    }
     this.detach(session);
     this.release(session);
     const durationMs = Math.max(

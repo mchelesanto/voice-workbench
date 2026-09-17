@@ -67,7 +67,10 @@ export function useRecorder(
             "audio/webm",
           ].find((type) => MediaRecorder.isTypeSupported(type));
           if (!mime) throw new Error("Unsupported recording format");
-          return new MediaRecorder(stream, { mimeType: mime });
+          return new MediaRecorder(stream, {
+            mimeType: mime,
+            audioBitsPerSecond: 64000,
+          });
         },
         meter: inputMeter,
         now: () => performance.now(),
