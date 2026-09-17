@@ -83,6 +83,7 @@ import { download, duration, exportNote } from "./export";
 import { useRecorder } from "./use-recorder";
 import { RecordingDialog } from "./recording-dialog";
 import { ImportDialog } from "./import-dialog";
+import { ProcessingStatus } from "./processing-status";
 import { audioExtension } from "../shared/audio-format";
 import { playbackSourceKey } from "./audio-playback";
 import { AudioPlayer, type PlaybackDuration } from "./audio-player";
@@ -417,6 +418,7 @@ export function Workbench() {
       if (processingRef.current || (!item.result && !settings)) return;
       processingRef.current = true;
       setProcessing(true);
+      workspaceScroll.current?.scrollTo({ top: 0 });
       setRecordingPhase(item.result ? "saving_transcript" : "saving_audio");
       setError("");
       setRecording(item);
@@ -1052,7 +1054,7 @@ export function Workbench() {
   );
   return (
     <div
-      className={`app-shell ${active ? "has-note" : ""} ${active && (active.snapshot().localIssue || ["conflict", "deleted", "error"].includes(active.snapshot().status)) ? "has-recovery" : ""} ${active?.snapshot().status === "conflict" ? "has-conflict" : ""}`}
+      className={`app-shell ${processing && recording ? "processing-active" : ""} ${active ? "has-note" : ""} ${active && (active.snapshot().localIssue || ["conflict", "deleted", "error"].includes(active.snapshot().status)) ? "has-recovery" : ""} ${active?.snapshot().status === "conflict" ? "has-conflict" : ""}`}
     >
       <a className="skip-link" href="#main">
         Skip to workspace
@@ -1075,11 +1077,13 @@ export function Workbench() {
             <span>Workspace</span>
             <ChevronRight size={14} />
             <span className="breadcrumb-current">
-              {active
-                ? "Note"
-                : visibleRecording && !locked
-                  ? "Recording"
-                  : "New recording"}
+              {processing
+                ? "Processing"
+                : active
+                  ? "Note"
+                  : visibleRecording && !locked
+                    ? "Recording"
+                    : "New recording"}
             </span>
           </div>
           <button className="local-badge" onClick={() => setPanel("help")}>
@@ -1133,6 +1137,20 @@ export function Workbench() {
             <div className="opening" role="status">
               <LoaderCircle className="spin" size={16} /> Opening note
             </div>
+          )}
+          {processing && recording && (
+            <ProcessingStatus
+              key={recording.id}
+              recording={recording}
+              phase={recordingPhase}
+              durable={recordingDurable}
+              cancel={() => modelAbort.current?.abort()}
+              downloadAudio={() => audioDownload(recording)}
+              downloadTranscript={() => {
+                if (recording.result)
+                  exportNote(recording.result, recording.createdAt);
+              }}
+            />
           )}
           {active ? (
             <Editor

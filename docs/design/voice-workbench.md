@@ -169,6 +169,8 @@ Alle deklarierten API-Routen verwenden diese Fehlerform, auch bei früher Ablehn
 
 Permissionfehler -> idle mit Meldung und neu nutzbarem Start. Recorderfehler nach ersten Chunks -> Audio-Rettungszustand, nicht leeres idle. Stop mit einer Sekunde Dauerreserve und 1 MiB Reserve vor der Uploadgrenze des gebundenen Anbieters; finalen Blob und gemessene Dauer vor Upload nochmals prüfen, bei Überschreitung nur Download/Löschen oder erneuter Import passend zum gewählten Anbieter. Unerwarteter nativer Stop führt zur lokalen Sicherung ohne automatische Transkription. IndexedDB-Datensätze bei Restore schema-validieren; Persistent-Storage-Anfrage kann Speicherbeständigkeit verbessern, ist kein Backupversprechen. Audioverlust bei Profilbereinigung bleibt dokumentierte Grenze.
 
+Die fokussierte Verarbeitungsansicht ist in `processing-status.md` festgelegt. Sie verwendet die bestehende Pipeline und erhält deren Abbruch-/Recoveryregeln; neue Modell- oder Speicheroperationen entstehen dadurch nicht.
+
 ## Visueller Vertrag
 
 Ruhige Schreibfläche, klarer weißer Editor, kühle hellgraue Bibliothek links, kräftiges Kobaltblau ausschließlich für primäre Aktionen. Desktop: 272px Verlauf plus flexible Arbeitsfläche; aktuelle Notiz und Bearbeitungsstatus im Kopf, Original als aufklappbarer Bereich, verwendbarer Text als Hauptfläche. Aufnahme-Steuerung am unteren Rand, außer während Konfliktauflösung; dort bleibt der Weg über die Bibliothek erreichbar. Kein Marketing-Hero, keine dekorativen Bilder. Der leere Zustand erklärt den Ablauf knapp; die Aufnahmeaktion liegt dauerhaft in der unteren Steuerung.

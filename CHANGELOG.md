@@ -4,6 +4,8 @@
 
 ### Added
 
+- Focused transcription status with the bound provider, elapsed time, real pipeline stages, cancellation, and backup downloads.
+
 - Focused microphone capture with live levels, explicit discard confirmation, and local audio-file import with preview.
 
 - Local Next.js API for notes, vocabulary, transcription, and text refinement.
