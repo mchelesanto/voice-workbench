@@ -2,11 +2,21 @@
 
 A personal workspace for thinking out loud, shaping your words, and keeping notes across computers.
 
+> **A personal tool, shared openly.** I built this for my own daily use, with care, not as a product or a startup. It is MIT-licensed and public because it might help someone with the same need. I am not running it as a service, and there is no support, roadmap, or stability promise. Use it, fork it, learn from it.
+
 Record a thought, keep the initial transcription, and refine a separate working version. Your notes and vocabulary live in your own Turso database. Audio stays only in the open tab and is lost on reload or close. Text recovery drafts are saved separately in the browser.
 
 ![The Voice Workbench workspace with the recording bar and note library](docs/screenshots/workspace.png)
 
 ![The focused recording view with a live microphone level and elapsed time](docs/screenshots/recording.png)
+
+## Built with
+
+- **Next.js 16** and **React 19** (App Router), **TypeScript** in strict mode
+- **Turso / libSQL** for cross-device notes and vocabulary, with versioned SQL migrations
+- **Google** and **Mistral** for transcription via the **Vercel AI SDK**, and **GLM 5.3 Flash on Fireworks** (direct API) for optional refinement
+- **Zod** for shared validation and response contracts
+- **Vitest** for behavior tests; CI runs tests, typecheck, lint, format, and build on every push
 
 **Initial transcription · Kept unchanged** preserves the first text returned by the transcription provider. With Polished mode, that text is already polished; a separate verbatim transcript is not generated. The audio recording is the source, and even Verbatim mode may contain transcription errors.
 
