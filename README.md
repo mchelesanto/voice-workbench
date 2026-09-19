@@ -4,6 +4,10 @@ A personal workspace for thinking out loud, shaping your words, and keeping note
 
 Record a thought, keep the initial transcription, and refine a separate working version. Your notes and vocabulary live in your own Turso database. Audio stays only in the open tab and is lost on reload or close. Text recovery drafts are saved separately in the browser.
 
+![The Voice Workbench workspace with the recording bar and note library](docs/screenshots/workspace.png)
+
+![The focused recording view with a live microphone level and elapsed time](docs/screenshots/recording.png)
+
 **Initial transcription · Kept unchanged** preserves the first text returned by the transcription provider. With Polished mode, that text is already polished; a separate verbatim transcript is not generated. The audio recording is the source, and even Verbatim mode may contain transcription errors.
 
 ## Project status
