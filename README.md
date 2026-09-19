@@ -97,4 +97,5 @@ This is a local single-user application, without authentication against other pr
 
 ## License
 
-No usage license has been granted for the application code yet.
+Released under the [MIT License](LICENSE). You are free to use, modify, and
+distribute this software, including for commercial purposes.
