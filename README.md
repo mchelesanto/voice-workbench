@@ -2,7 +2,7 @@
 
 A personal workspace for thinking out loud, shaping your words, and keeping notes across computers.
 
-> **A personal tool, shared openly.** I built this for my own daily use, with care, not as a product or a startup. It is MIT-licensed and public because it might help someone with the same need. I am not running it as a service, and there is no support, roadmap, or stability promise. Use it, fork it, learn from it.
+> **A personal tool, shared openly.** I built this for my own daily use, not as a product or a startup. It is MIT-licensed and public because it might help someone with the same need. I am not running it as a service, and there is no support, roadmap, or stability promise. Use it, fork it, or take whatever part is useful to you.
 
 Record a thought, keep the initial transcription, and refine a separate working version. Your notes and vocabulary live in your own Turso database. Audio stays only in the open tab and is lost on reload or close. Text recovery drafts are saved separately in the browser.
 
@@ -34,7 +34,7 @@ Requires Node.js 24 or newer, npm, your own Turso database, and at least one tra
 4. Run `npm run build`, then `npm start`.
 5. Open [localhost:3210](http://localhost:3210).
 
-For development, run `npm run dev`. The launcher binds only to `127.0.0.1:3210`. The default browser origin is `http://localhost:3210`; it must match `APP_ORIGIN`. Restart after changing configuration.
+For development, run `npm run dev`. The launcher binds only to `127.0.0.1:3210`. The default browser origin is `http://localhost:3210`; it must match `APP_ORIGIN`. Pages opened on any other address, including the `127.0.0.1:3210` link Next.js prints at startup, redirect to `APP_ORIGIN`. Restart after changing configuration.
 
 ## Configuration
 

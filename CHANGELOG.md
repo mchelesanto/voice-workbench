@@ -44,6 +44,8 @@
 
 ### Fixed
 
+- Redirect pages opened on another loopback address, such as the `127.0.0.1:3210` link printed at startup, to the configured `APP_ORIGIN` instead of loading a workspace whose API requests all fail.
+
 - Pause capture, its timer and input immediately before the compact discard question. Resume continues the same clip; pause time is excluded. A separate Pause/Resume action replaces the footer Cancel button.
 
 - Apply a selected remote vocabulary to subsequent recordings and unlock settings opened before their initial load completes.

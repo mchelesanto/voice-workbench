@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+import { canonicalOrigin } from "@/server/canonical-origin";
 import "./globals.css";
 export const metadata: Metadata = {
   title: "Voice Workbench · A space to think",
@@ -12,7 +14,11 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  await headers();
+  const canonical = canonicalOrigin(
+    (await headers()).get("host"),
+    process.env.APP_ORIGIN,
+  );
+  if (canonical) redirect(canonical);
   return (
     <html lang="en">
       <body>{children}</body>
